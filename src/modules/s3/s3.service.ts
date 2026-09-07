@@ -10,7 +10,7 @@ export class S3Service {
     private readonly awsBucketname: string;
 
     constructor(private readonly configService: ConfigService) {
-        this.awsBucketname = this.configService.getOrThrow<string>('AWS_BUCKET_NAME');
+        this.awsBucketname = this.configService.getOrThrow<string>('AWS_S3_BUCKE');
         
         this.awsS3Client  = new S3Client({
             region: this.configService.getOrThrow<string>('AWS_REGION'),
