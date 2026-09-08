@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { InvitadoService } from "./invitado.service";
 import { CrearSolicitudDTO } from "./entities/crearSolicitud.entity";
-import { JwtAuthGUard } from "../auth/guards/jwtAuth.guard";
+import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorator/rol.decorator";
 import { RolUsuario } from "../usuario/entities/usuario.entity";
@@ -15,14 +15,14 @@ export class InvitadoController{
         return this.invitadoService.crearSolicitud(crearSolicitudDto);
     }
 
-    @UseGuards(JwtAuthGUard, RolesGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.SECRETARIA)
     @Get()
     mostrarSolicitudes(){
         return this.invitadoService.verSolicitudes();
     }
 
-    @UseGuards(JwtAuthGUard, RolesGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.SECRETARIA, RolUsuario.ADMIN)
     @Patch(':id/contactado')
     marcarContactado(@Param(':id') id:string){
