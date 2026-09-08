@@ -39,7 +39,7 @@ export class CrearPropiedadDto{
 
     @IsNumber()
     @Min(1)
-    baños:number;
+    banos:number;
 
     @IsNumber()
     @Min(1)
@@ -47,7 +47,7 @@ export class CrearPropiedadDto{
 
     @IsNumber()
     @Min(0)
-    estacionamiento?:number;
+    estacionamientos?:number;
 
     @IsBoolean()
     @IsOptional()
@@ -59,7 +59,7 @@ export class CrearPropiedadDto{
 
     @IsNumber()
     @Min(0)
-    metrosCuadradosConstruidos:number;
+    metrosCuadradosconstruidos:number;
 
     @IsNumber()
     anoConstruccion?: number;
@@ -79,7 +79,7 @@ export class CrearPropiedadDto{
 
     @IsString()
     @IsNotEmpty()
-    protadaImgUrl:string
+    protadaimgUrl:string
 
 
 }
