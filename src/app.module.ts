@@ -6,6 +6,8 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { PorpiedadModule } from "./modules/propiedades/propiedad.module";
 import { InvitadoModule } from "./modules/invitado/invitado.module";
 import { S3Module } from "./modules/s3/s3.module";
+import { AuthModule } from "./modules/auth/auth.module";
+import { UsuarioModule } from "./modules/usuario/usuario.module";
 
 @Module({
   imports: [
@@ -31,7 +33,9 @@ import { S3Module } from "./modules/s3/s3.module";
     }),
     PorpiedadModule,
     InvitadoModule,
-    S3Module
+    S3Module,
+    AuthModule,
+    UsuarioModule
   ],
   controllers: [AppController],
   providers: [AppService],
