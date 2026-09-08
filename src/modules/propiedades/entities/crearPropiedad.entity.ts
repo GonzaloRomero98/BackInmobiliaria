@@ -79,7 +79,7 @@ export class CrearPropiedadDto{
 
     @IsString()
     @IsNotEmpty()
-    protadaimgUrl:string
+    portadaimgUrl:string
 
 
 }
