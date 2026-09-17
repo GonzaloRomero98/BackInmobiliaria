@@ -24,5 +24,15 @@ export class UbicacionService{
         return this.regionRepo.find({order:{id:'ASC'}})
     }
 
+    async crearRegion(crearRegionDto:Region):Promise<Region>{
+        const region = this.regionRepo.create(crearRegionDto);
+        return this.regionRepo.save(region);
+    }
+
+    async crearCiudad(crearCiudadDto:Ciudad): Promise<Ciudad>{
+        const ciudad = this.ciudadRepo.create(crearCiudadDto);
+        return this.ciudadRepo.save(ciudad)
+    }
+
 
 }
