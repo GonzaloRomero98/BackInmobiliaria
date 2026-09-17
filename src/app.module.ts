@@ -8,6 +8,8 @@ import { InvitadoModule } from "./modules/invitado/invitado.module";
 import { S3Module } from "./modules/s3/s3.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsuarioModule } from "./modules/usuario/usuario.module";
+import { UbicacionModule } from "./modules/ubicacion/ubicacion.module";
+import { RolModule } from "./modules/rol/rol.module";
 
 @Module({
   imports: [
@@ -35,7 +37,9 @@ import { UsuarioModule } from "./modules/usuario/usuario.module";
     InvitadoModule,
     S3Module,
     AuthModule,
-    UsuarioModule
+    UsuarioModule,
+    UbicacionModule,
+    RolModule
   ],
   controllers: [AppController],
   providers: [AppService],

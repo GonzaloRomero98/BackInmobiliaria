@@ -5,6 +5,10 @@ export class CrearSolicitudDTO{
     @IsNotEmpty()
     nombre: string;
 
+    @IsString()
+    @IsNotEmpty()
+    apellido: string;
+
     @IsEmail()
     correo:string;
 
