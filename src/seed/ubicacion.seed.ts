@@ -33,6 +33,7 @@ async function boostrap() {
         let region = await regionRepositorio.findOne({where:{nombre:region_nombre}});
         if(!region){
             region = await regionRepositorio.save(regionRepositorio.create({nombre:region_nombre}));
+            console.log('region:', region);
         }
 
         for(const nombre of ciudades){
