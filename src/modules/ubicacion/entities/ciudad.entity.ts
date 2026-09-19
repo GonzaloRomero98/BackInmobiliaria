@@ -11,5 +11,5 @@ export class Ciudad{
 
     @ManyToOne(()=>Region, (region)=> region.ciudad,{eager:true, nullable:false})
     @JoinColumn({name:'id_region'})
-    region: Region[];
+    region: Region;
 }

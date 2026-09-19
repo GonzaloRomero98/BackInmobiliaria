@@ -10,5 +10,5 @@ export class Region {
     nombre:string;
 
     @OneToMany(()=> Ciudad, (ciudad)=> ciudad.region)
-    ciudad:Ciudad;
+    ciudad:Ciudad[];
 }

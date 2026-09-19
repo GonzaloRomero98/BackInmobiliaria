@@ -39,7 +39,7 @@ async function boostrap() {
         for(const nombre of ciudades){
             const existeCiudad = await ciudadRepositorio.findOne({where:{nombre, region:{id:region.id}}});
             if(!existeCiudad){
-                await ciudadRepositorio.save(ciudadRepositorio.create({nombre, region: [region]}))
+                await ciudadRepositorio.save(ciudadRepositorio.create({ nombre, region }));
             }
         }
     }
