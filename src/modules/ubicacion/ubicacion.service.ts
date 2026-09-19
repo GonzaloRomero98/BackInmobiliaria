@@ -13,26 +13,15 @@ export class UbicacionService{
         private readonly regionRepo: Repository<Region>,
     ){}
 
-    async encontrarCiudadPorRegion(id_Region:number):Promise<Ciudad[]>{
+    obtenerRegiones(){
+        return this.regionRepo.find({order:{nombre:'ASC'}})
+    }
+
+    obtenerCiudades(id_region?:number){
         return this.ciudadRepo.find({
-            where:{region: {id: id_Region}},
-            order: {nombre:'ASC'}
+            where: id_region?{region:{id:id_region}}:{},
+            order:{nombre:'ASC'}
         });
     }
-
-    async obtenerRegion(){
-        return this.regionRepo.find({order:{id:'ASC'}})
-    }
-
-    async crearRegion(crearRegionDto:Region):Promise<Region>{
-        const region = this.regionRepo.create(crearRegionDto);
-        return this.regionRepo.save(region);
-    }
-
-    async crearCiudad(crearCiudadDto:Ciudad): Promise<Ciudad>{
-        const ciudad = this.ciudadRepo.create(crearCiudadDto);
-        return this.ciudadRepo.save(ciudad)
-    }
-
 
 }

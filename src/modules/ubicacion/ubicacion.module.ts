@@ -7,10 +7,10 @@ import { UbicacionService } from "./ubicacion.service";
 import { AuthModule } from "../auth/auth.module";
 
 @Module({
-    imports:[TypeOrmModule.forFeature([Ciudad, Region]),AuthModule],
+    imports:[TypeOrmModule.forFeature([Ciudad, Region])],
     controllers:[UbicacionController],
     providers:[UbicacionService],
-    exports:[UbicacionService]
+    exports:[UbicacionService, TypeOrmModule],
 })
 
 export class UbicacionModule{}
