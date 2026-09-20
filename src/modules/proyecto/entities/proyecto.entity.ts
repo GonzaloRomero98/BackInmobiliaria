@@ -1,6 +1,7 @@
-import { Column, CreateDateColumn, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
 import { Ciudad } from "../../ubicacion/entities/ciudad.entity";
 
+@Entity('proyecto')
 export class Proyecto{
     @PrimaryGeneratedColumn()
     id:string;
