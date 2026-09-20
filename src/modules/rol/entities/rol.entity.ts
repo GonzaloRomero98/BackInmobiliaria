@@ -5,6 +5,6 @@ export class Rol {
     @PrimaryGeneratedColumn()
     id:number;
 
-    @Column({unique:true})
+    @Column({unique:true, length:50})
     nombre:string;
 }
