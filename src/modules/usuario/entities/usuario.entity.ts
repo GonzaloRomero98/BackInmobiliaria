@@ -13,7 +13,7 @@ export class Usuario {
     @Column()
     contrasena: string;
 
-    @Column()
+    @Column({unique:true,length:50})
     nombre: string;
 
     @ManyToOne(()=> Rol,{eager:true, nullable:false})
