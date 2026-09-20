@@ -4,7 +4,7 @@ import { CrearSolicitudDTO } from "./entities/crearSolicitud.entity";
 import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorator/rol.decorator";
-import { RolUsuario } from "../usuario/entities/usuario.entity";
+import { RolUsuario } from "../rol/rol.enum";
 
 @Controller('invitado')
 export class InvitadoController{
@@ -16,14 +16,14 @@ export class InvitadoController{
     }
 
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(RolUsuario.SECRETARIA)
+    @Roles(RolUsuario.SECRETARIO)
     @Get()
     mostrarSolicitudes(){
         return this.invitadoService.verSolicitudes();
     }
 
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(RolUsuario.SECRETARIA, RolUsuario.ADMIN)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
     @Patch(':id/contactado')
     marcarContactado(@Param(':id') id:string){
         return this.invitadoService.marcarContactado(id);

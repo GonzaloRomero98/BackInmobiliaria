@@ -4,7 +4,7 @@ import { Get } from "@nestjs/common";
 import { CrearPropiedadDto } from "./entities/crearPropiedad.entity";
 import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
-import { RolUsuario } from "../usuario/entities/usuario.entity";
+import { RolUsuario } from "../rol/rol.enum";
 import { Roles } from "../auth/decorator/rol.decorator";
 
 @Controller('propiedad')
