@@ -13,7 +13,7 @@ export class AuthService{
 
     async registrarUsuario(crearUsuarioDto: CrearUsuarioDto){
         const usuario = await this.usuarioService.crearUsuario(crearUsuarioDto);
-        return this.generarToken(usuario.id, usuario.correo, usuario.rol);
+        return this.generarToken(usuario.id, usuario.correo, usuario.rol.nombre);
     }
 
     async loginUsuario(loginDto:LoginDto){
@@ -27,7 +27,7 @@ export class AuthService{
             throw new UnauthorizedException('Credenciales incorrectas')
         }
 
-        return this.generarToken(usuario.id, usuario.correo, usuario.rol);
+        return this.generarToken(usuario.id, usuario.correo, usuario.rol.nombre);
     }
 
     private generarToken(id:string, correo:string, rol:string){

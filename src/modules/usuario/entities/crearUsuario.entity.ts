@@ -1,5 +1,5 @@
 import { IsEmail, IsEnum, IsNotEmpty, IsString, MinLength } from "class-validator";
-import { RolUsuario } from "./usuario.entity";
+import { RolUsuario } from "../../rol/rol.enum";
 
 export class CrearUsuarioDto{
     @IsEmail()
@@ -14,6 +14,6 @@ export class CrearUsuarioDto{
     nombre:string;
 
     @IsEnum(RolUsuario)
-    rol:RolUsuario
+    rol:RolUsuario;
     
 }

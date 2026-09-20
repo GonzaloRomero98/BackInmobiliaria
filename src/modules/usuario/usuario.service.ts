@@ -1,15 +1,17 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Usuario } from "./entities/usuario.entity";
 import { Repository } from "typeorm";
 import { CrearUsuarioDto } from "./entities/crearUsuario.entity";
 import * as bcrypt from 'bcrypt';
+import { RolService } from "../rol/rol.service";
 
 @Injectable()
 export class UsuarioService{
     constructor(
         @InjectRepository(Usuario)
         private readonly usarioRepositorio: Repository<Usuario>,
+        private readonly rolService: RolService
     ){}
 
 
@@ -21,10 +23,16 @@ export class UsuarioService{
             throw new ConflictException('Ya existe un  usuario para este correo');
         }
 
+        const {rol:nombreRol, ...datos } = usuarioDto;
+        const rol = await this.rolService.ObtenerRolByNombre(nombreRol);
+        if(!rol){
+            throw new BadRequestException('El rol no se encuentra en la base de datos');
+        }
+
         const contrasenaHash = await bcrypt.hash(usuarioDto.contrasena, 10);
 
         const usuario = this.usarioRepositorio.create({
-            ...usuarioDto, contrasena: contrasenaHash,
+            ...datos, contrasena: contrasenaHash, rol
         });
 
         return this.usarioRepositorio.save(usuario);

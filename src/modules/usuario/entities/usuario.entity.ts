@@ -1,9 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { Rol } from "../../rol/entities/rol.entities";
 
-export enum RolUsuario {
-    ADMIN = "ADMIN",
-    SECRETARIA = "SECRETARIA",
-}
 
 @Entity('usuario')
 export class Usuario {
@@ -19,12 +16,9 @@ export class Usuario {
     @Column()
     nombre: string;
 
-    @Column({
-        type: 'enum',
-        enum: RolUsuario,
-        default: RolUsuario.ADMIN,
-    })
-    rol: RolUsuario;
+    @ManyToOne(()=> Rol,{eager:true, nullable:false})
+    @JoinColumn({name:'id_rol'})
+    rol:Rol;
 
     @CreateDateColumn()
     creadoEn: Date;

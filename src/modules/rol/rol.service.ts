@@ -13,4 +13,9 @@ export class RolService{
     async ObtenerTodosRoles(){
         return this.rolRepo.find({order:{id:'ASC'}});
     }
+
+    async ObtenerRolByNombre(nombre:string):Promise<Rol | null>{
+        return this.rolRepo.findOne({where:{nombre}});
+
+    }
 }
