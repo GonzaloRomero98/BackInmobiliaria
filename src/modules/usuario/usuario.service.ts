@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from "@nestjs/comm
 import { InjectRepository } from "@nestjs/typeorm";
 import { Usuario } from "./entities/usuario.entity";
 import { Repository } from "typeorm";
-import { CrearUsuarioDto } from "./entities/crearUsuario.entity";
+import { CrearUsuarioDto } from "./dto/crearUsuario.dto";
 import * as bcrypt from 'bcrypt';
 import { RolService } from "../rol/rol.service";
 

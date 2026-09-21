@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ProyectoService } from "./proyecto.service";
-import { CrearProyectoDto } from "./entities/crearProyecto.entity";
+import { CrearProyectoDto } from "./dto/crearProyecto.dto";
 import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorator/rol.decorator";

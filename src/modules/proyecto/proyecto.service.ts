@@ -3,7 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Proyecto } from "./entities/proyecto.entity";
 import { Repository } from "typeorm";
 import { Ciudad } from "../ubicacion/entities/ciudad.entity";
-import { CrearProyectoDto } from "./entities/crearProyecto.entity";
+import { CrearProyectoDto } from "./dto/crearProyecto.dto";
 
 @Injectable()
 export class ProyectoService{
