@@ -5,6 +5,8 @@ import { FindOptionsWhere, In, Repository } from "typeorm";
 import { Proyecto } from "../proyecto/entities/proyecto.entity";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
 import { Caracteristica } from "../caracteristicas/entities/caracteristica.entity";
+import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
+import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 
 @Injectable()
 export class ModeloCasaService{
@@ -14,7 +16,9 @@ export class ModeloCasaService{
         @InjectRepository(Proyecto)
         private readonly proyectoRepository: Repository<Proyecto>,
         @InjectRepository(Caracteristica)
-        private readonly caracteristicaRepository: Repository<Caracteristica>
+        private readonly caracteristicaRepository: Repository<Caracteristica>,
+        @InjectRepository(GaleriaModeloCasa)
+        private readonly galeriaRepository: Repository<GaleriaModeloCasa>
     ){}
 
     async crearModeloCasa(crearModeloCasaDto:CrearModeloCasaDto):Promise<ModeloCasa>{
@@ -67,16 +71,41 @@ export class ModeloCasaService{
             filtro.tipoOperacion = tipoOperacion;
         }
 
-        return this.modeloCasaRepository.find({where:filtro, order:{nombreModelo:'ASC'}});
+        return this.modeloCasaRepository.find({where:filtro, order:{nombreModelo:'ASC', fotos:{orden:'ASC'}}});
     }
 
     async obtenerModeloByID(id:string): Promise<ModeloCasa>{
-        const modelo = await this.modeloCasaRepository.findOne({where:{id:id,activo:true,proyecto:{activo:true}}});
+        const modelo = await this.modeloCasaRepository.findOne({where:{id:id,activo:true,proyecto:{activo:true}},order:{fotos:{orden:'ASC'}}});
 
         if(!modelo){
             throw new NotFoundException('No se encontro el modelo de la casa');
         }
 
         return modelo;
+    }
+
+    async agregarFoto(id:string, agregarFotoDto: AgregarFotoDto){
+        const modelo = await this.modeloCasaRepository.findOne({where:{id}});
+        if(!modelo){
+            throw new NotFoundException('Modelo de la casa no encontrado');
+        }
+
+        const foto = new GaleriaModeloCasa();
+            foto.modeloCasa = modelo;
+            foto.urlImagen = agregarFotoDto.urlImagen;
+            foto.orden = agregarFotoDto.orden ?? await this.galeriaRepository.count({where:{modeloCasa:{id}}});
+
+        const guardarFoto = await this.galeriaRepository.save(foto);
+        return {id:guardarFoto.id, urlImagen:guardarFoto.urlImagen, orden:guardarFoto.orden};
+    }
+
+    async eliminarFoto(id:string, foto_id:string):Promise<void>{
+        const foto = await this.galeriaRepository.findOne({where:{id:foto_id, modeloCasa:{id}}});
+
+        if(!foto){
+            throw new NotFoundException('Foto no encontrada');
+        }
+
+        await this.galeriaRepository.recover(foto);
     }
 }

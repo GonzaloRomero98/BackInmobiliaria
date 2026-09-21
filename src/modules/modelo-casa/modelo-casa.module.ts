@@ -6,9 +6,10 @@ import { AuthModule } from "../auth/auth.module";
 import { ModeloCasaController } from "./modelo-casa.controller";
 import { ModeloCasaService } from "./modelo-casa.service";
 import { Caracteristica } from "../caracteristicas/entities/caracteristica.entity";
+import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
 
 @Module({
-    imports:[TypeOrmModule.forFeature([ModeloCasa, Proyecto, Caracteristica]), AuthModule],
+    imports:[TypeOrmModule.forFeature([ModeloCasa, Proyecto, Caracteristica, GaleriaModeloCasa]), AuthModule],
     controllers:[ModeloCasaController],
     providers:[ModeloCasaService],
     exports:[TypeOrmModule]

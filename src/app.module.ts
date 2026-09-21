@@ -12,6 +12,7 @@ import { UbicacionModule } from "./modules/ubicacion/ubicacion.module";
 import { RolModule } from "./modules/rol/rol.module";
 import { ProyectoModule } from "./modules/proyecto/proyecto.module";
 import { ModeloCasaModule } from "./modules/modelo-casa/modelo-casa.module";
+import { CaracteristicaModule } from "./modules/caracteristicas/caracteristica.module";
 
 @Module({
   imports: [
@@ -43,7 +44,8 @@ import { ModeloCasaModule } from "./modules/modelo-casa/modelo-casa.module";
     UbicacionModule,
     RolModule,
     ProyectoModule,
-    ModeloCasaModule
+    ModeloCasaModule,
+    CaracteristicaModule
   ],
   controllers: [AppController],
   providers: [AppService],

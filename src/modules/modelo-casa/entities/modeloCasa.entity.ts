@@ -1,6 +1,7 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, JoinColumn, JoinTable, ManyToMany, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
 import { Proyecto } from "../../proyecto/entities/proyecto.entity";
 import { Caracteristica } from "../../caracteristicas/entities/caracteristica.entity";
+import { GaleriaModeloCasa } from "./galeriaModeloCasa.entity";
 
 @Entity('modelo_casa')
 export class ModeloCasa{
@@ -63,4 +64,7 @@ export class ModeloCasa{
         inverseJoinColumn:{name:'id_caracteristica', referencedColumnName:'id'}
     })
     caracteristicas: Caracteristica[];
+
+    @OneToMany(()=> GaleriaModeloCasa,(foto) => foto.modeloCasa,{eager:true})
+    fotos:GaleriaModeloCasa[];
 }
