@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ModeloCasa } from "./entities/modeloCasa.entity";
-import { FindOptionsWhere, Repository } from "typeorm";
+import { FindOptionsWhere, In, Repository } from "typeorm";
 import { Proyecto } from "../proyecto/entities/proyecto.entity";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
+import { Caracteristica } from "../caracteristicas/entities/caracteristica.entity";
 
 @Injectable()
 export class ModeloCasaService{
@@ -11,7 +12,9 @@ export class ModeloCasaService{
         @InjectRepository(ModeloCasa)
         private readonly modeloCasaRepository: Repository<ModeloCasa>,
         @InjectRepository(Proyecto)
-        private readonly proyectoRepository: Repository<Proyecto>
+        private readonly proyectoRepository: Repository<Proyecto>,
+        @InjectRepository(Caracteristica)
+        private readonly caracteristicaRepository: Repository<Caracteristica>
     ){}
 
     async crearModeloCasa(crearModeloCasaDto:CrearModeloCasaDto):Promise<ModeloCasa>{
@@ -35,6 +38,15 @@ export class ModeloCasaService{
             modeloCasa.gastosComunes = crearModeloCasaDto.gastosComunes;
             modeloCasa.modelo3dUrl = crearModeloCasaDto.modelo3dUrl;
             modeloCasa.imgPrincipal = crearModeloCasaDto.imagenPrincipal;
+            modeloCasa.caracteristicas = [];
+            if(crearModeloCasaDto.caracteristicasID?.length){
+                const ids = [... new Set(crearModeloCasaDto.caracteristicasID)];
+                const caracteristicas = await this.caracteristicaRepository.findBy({id:In(ids)});
+                if(caracteristicas.length ! == ids.length){
+                    throw new BadRequestException('Algunas caracteristicas seleccionadas no existen');
+                }
+                modeloCasa.caracteristicas = caracteristicas;
+            }
 
         const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:modeloCasa.nombreModelo}});
 

@@ -1,5 +1,6 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, JoinColumn, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
 import { Proyecto } from "../../proyecto/entities/proyecto.entity";
+import { Caracteristica } from "../../caracteristicas/entities/caracteristica.entity";
 
 @Entity('modelo_casa')
 export class ModeloCasa{
@@ -54,4 +55,12 @@ export class ModeloCasa{
     @ManyToOne(()=>Proyecto,{eager:true, nullable:false})
     @JoinColumn({name:'id_proyecto'})
     proyecto:Proyecto
+
+    @ManyToMany(()=> Caracteristica,{eager:true})
+    @JoinTable({
+        name:'modelo_caracteristica',
+        joinColumn:{name:'id_modelo_casa', referencedColumnName:'id'},
+        inverseJoinColumn:{name:'id_caracteristica', referencedColumnName:'id'}
+    })
+    caracteristicas: Caracteristica[];
 }
