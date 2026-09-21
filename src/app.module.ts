@@ -11,6 +11,7 @@ import { UsuarioModule } from "./modules/usuario/usuario.module";
 import { UbicacionModule } from "./modules/ubicacion/ubicacion.module";
 import { RolModule } from "./modules/rol/rol.module";
 import { ProyectoModule } from "./modules/proyecto/proyecto.module";
+import { ModeloCasaModule } from "./modules/modelo-casa/modelo-casa.module";
 
 @Module({
   imports: [
@@ -41,7 +42,8 @@ import { ProyectoModule } from "./modules/proyecto/proyecto.module";
     UsuarioModule,
     UbicacionModule,
     RolModule,
-    ProyectoModule
+    ProyectoModule,
+    ModeloCasaModule
   ],
   controllers: [AppController],
   providers: [AppService],
