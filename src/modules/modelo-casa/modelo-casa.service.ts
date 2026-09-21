@@ -36,6 +36,12 @@ export class ModeloCasaService{
             modeloCasa.modelo3dUrl = crearModeloCasaDto.modelo3dUrl;
             modeloCasa.imgPrincipal = crearModeloCasaDto.imagenPrincipal;
 
+        const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:modeloCasa.nombreModelo}});
+
+        if(existeCasa){
+            throw new NotFoundException("Ya se ha ingresado esta propiedad")
+        }
+        
         return this.modeloCasaRepository.save(modeloCasa)
 
     }
