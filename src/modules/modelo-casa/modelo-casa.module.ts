@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
-import { ModeloCasa } from "./modelo-casa.service";
+import { ModeloCasa } from "./entities/modeloCasa.entity";
 import { Proyecto } from "../proyecto/entities/proyecto.entity";
 import { AuthModule } from "../auth/auth.module";
 
