@@ -3,7 +3,7 @@ import { Ciudad } from "../../ubicacion/entities/ciudad.entity";
 
 @Entity('proyecto')
 export class Proyecto{
-    @PrimaryGeneratedColumn()
+    @PrimaryGeneratedColumn('uuid')
     id:string;
 
     @Column({length:150})
