@@ -12,6 +12,6 @@ import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
     imports:[TypeOrmModule.forFeature([ModeloCasa, Proyecto, Caracteristica, GaleriaModeloCasa]), AuthModule],
     controllers:[ModeloCasaController],
     providers:[ModeloCasaService],
-    exports:[TypeOrmModule]
+    exports:[TypeOrmModule, ModeloCasaService]
 })
 export class ModeloCasaModule{}

@@ -3,8 +3,6 @@ import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
-import { PorpiedadModule } from "./modules/propiedades/propiedad.module";
-import { InvitadoModule } from "./modules/invitado/invitado.module";
 import { S3Module } from "./modules/s3/s3.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsuarioModule } from "./modules/usuario/usuario.module";
@@ -13,6 +11,7 @@ import { RolModule } from "./modules/rol/rol.module";
 import { ProyectoModule } from "./modules/proyecto/proyecto.module";
 import { ModeloCasaModule } from "./modules/modelo-casa/modelo-casa.module";
 import { CaracteristicaModule } from "./modules/caracteristicas/caracteristica.module";
+import { SolicitudModule } from "./modules/solicitud/solicitud.module";
 
 @Module({
   imports: [
@@ -36,8 +35,6 @@ import { CaracteristicaModule } from "./modules/caracteristicas/caracteristica.m
         },
       }),
     }),
-    PorpiedadModule,
-    InvitadoModule,
     S3Module,
     AuthModule,
     UsuarioModule,
@@ -45,7 +42,8 @@ import { CaracteristicaModule } from "./modules/caracteristicas/caracteristica.m
     RolModule,
     ProyectoModule,
     ModeloCasaModule,
-    CaracteristicaModule
+    CaracteristicaModule,
+    SolicitudModule
   ],
   controllers: [AppController],
   providers: [AppService],

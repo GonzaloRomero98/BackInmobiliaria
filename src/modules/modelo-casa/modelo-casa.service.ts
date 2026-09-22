@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ModeloCasa } from "./entities/modeloCasa.entity";
 import { FindOptionsWhere, In, Repository } from "typeorm";
@@ -88,6 +88,12 @@ export class ModeloCasaService{
         const modelo = await this.modeloCasaRepository.findOne({where:{id}});
         if(!modelo){
             throw new NotFoundException('Modelo de la casa no encontrado');
+        }
+
+        const existeFoto = await this.galeriaRepository.findOne({where:{urlImagen:agregarFotoDto.urlImagen, modeloCasa:{id}}});
+
+        if(existeFoto){
+            throw new ConflictException('Esta foto ya esta en la galeria del modelo de casa')
         }
 
         const foto = new GaleriaModeloCasa();
