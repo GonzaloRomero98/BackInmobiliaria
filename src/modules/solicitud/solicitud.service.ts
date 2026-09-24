@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Solicitud } from "./entities/solicitud.entity";
 import { Repository } from "typeorm";
-import { ModeloCasa } from "../modelo-casa/entities/modeloCasa.entity";
+import { ModeloCasa } from "../modeloCasa/entities/modeloCasa.entity";
 import { CrearSolicitudDto } from "./dto/crearSolicitud.dto";
 @Injectable()
 export class SolicitudService{

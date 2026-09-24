@@ -1,5 +1,5 @@
 import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
-import { ModeloCasa } from "../../modelo-casa/entities/modeloCasa.entity";
+import { ModeloCasa } from "../../modeloCasa/entities/modeloCasa.entity";
 
 @Entity('solicitud')
 export class Solicitud{

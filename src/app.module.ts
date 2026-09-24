@@ -9,7 +9,7 @@ import { UsuarioModule } from "./modules/usuario/usuario.module";
 import { UbicacionModule } from "./modules/ubicacion/ubicacion.module";
 import { RolModule } from "./modules/rol/rol.module";
 import { ProyectoModule } from "./modules/proyecto/proyecto.module";
-import { ModeloCasaModule } from "./modules/modelo-casa/modelo-casa.module";
+import { ModeloCasaModule } from "./modules/modeloCasa/modelo-casa.module";
 import { CaracteristicaModule } from "./modules/caracteristicas/caracteristica.module";
 import { SolicitudModule } from "./modules/solicitud/solicitud.module";
 

@@ -22,9 +22,9 @@ export class S3Service {
         });
     }
 
-    async obtenerUrl(archivo:string, contentType:string):Promise<{uploadUrl:string, publicUrl:string, key:string}>{
+    async obtenerUrl(archivo:string, contentType:string, carpeta:string):Promise<{uploadUrl:string, publicUrl:string, key:string}>{
         const extension = archivo.split('.').pop();
-        const key = `models/${uuidv4()}.${extension}`
+        const key = `${carpeta}/${uuidv4()}.${extension}`
 
         const command = new PutObjectCommand({
             Bucket: this.awsBucketname,
