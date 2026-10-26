@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsDecimal, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MaxLength, Min } from "class-validator";
+import { IsArray, IsBoolean, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MaxLength, Min } from "class-validator";
 import { Moneda, TipoOperacion } from "../modelo-casa.enum";
 
 export class CrearModeloCasaDto{
@@ -7,7 +7,7 @@ export class CrearModeloCasaDto{
 
     @IsString()
     @IsNotEmpty()
-    @MaxLength(100)
+    @MaxLength(150)
     nombreModelo:string;
 
     @IsEnum(TipoOperacion)
@@ -52,8 +52,9 @@ export class CrearModeloCasaDto{
     modelo3dUrl:string;
 
     @IsString()
-    imagenPrincipal:string;
+    imgPrincipal:string;
 
     @IsArray()
-    caracteristicasID:string[];
+    @IsInt({each:true})
+    caracteristicasID:number[];
 }

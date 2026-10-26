@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, JoinColumn, JoinTable, ManyToMany, Ma
 import { Proyecto } from "../../proyecto/entities/proyecto.entity";
 import { Caracteristica } from "../../caracteristicas/entities/caracteristica.entity";
 import { GaleriaModeloCasa } from "./galeriaModeloCasa.entity";
+import { decimalANumero } from "../../../database/transformadores";
 
 @Entity('modelo_casa')
 export class ModeloCasa{
@@ -26,13 +27,13 @@ export class ModeloCasa{
     @Column({default:false})
     mascotas: boolean;
 
-    @Column({name:'superficie_construida', type:'decimal'})
+    @Column({name:'superficie_construida', type:'decimal', transformer:decimalANumero})
     superficieConstruida:number;
 
-     @Column({name:'superficie_terreno', type:'decimal'})
+     @Column({name:'superficie_terreno', type:'decimal', transformer:decimalANumero})
     superficieTerreno:number;
 
-    @Column({type:'decimal', precision:12, scale:4})
+    @Column({type:'decimal', precision:12, scale:4, transformer:decimalANumero})
     precio:number;
 
     @Column({type:'varchar', length:3})

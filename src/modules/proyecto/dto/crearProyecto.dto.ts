@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, MaxLength } from "class-validator";
+import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Max, MaxLength, Min } from "class-validator";
 
 export class CrearProyectoDto{
     @IsString()
@@ -10,9 +10,27 @@ export class CrearProyectoDto{
     @IsPositive()
     id_ciudad:number;
 
+    @IsOptional()
     @IsString()
-    descripcion:string;
+    descripcion?:string;
 
     @IsString()
     imagenPortada:string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    direccion?:string;
+
+    @IsOptional()
+    @IsNumber({maxDecimalPlaces:6})
+    @Min(-90)
+    @Max(90)
+    latitud?:number;
+
+    @IsOptional()
+    @IsNumber({maxDecimalPlaces:6})
+    @Min(-180)
+    @Max(180)
+    longitud?:number;
 }

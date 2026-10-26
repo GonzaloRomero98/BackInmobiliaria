@@ -1,13 +1,16 @@
-import { Body, Controller, Delete, Get, Param, ParseEnumPipe, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ModeloCasaService } from "./modelo-casa.service";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
 import { Roles } from "../auth/decorator/rol.decorator";
 import { RolUsuario } from "../rol/rol.enum";
 import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
-import { TipoOperacion } from "./modelo-casa.enum";
+import { FiltrosModeloCasaDto } from "./dto/filtrosModeloCasa.dto";
 import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 
+@ApiTags('modelos de casa')
+@ApiBearerAuth()
 @Controller('modeloCasa')
 export class ModeloCasaController{
     constructor(private readonly modeloCasaService:ModeloCasaService){}
@@ -20,8 +23,8 @@ export class ModeloCasaController{
     }
 
     @Get()
-    obtenerModelosCasa(@Query('id_proyecto', new ParseUUIDPipe({optional:true})) id_proyecto?:string, @Query('tipoOperacion', new ParseEnumPipe(TipoOperacion,{optional:true}))tipoOperacion ?:TipoOperacion){
-        return this.modeloCasaService.mostrarModelosCasa(id_proyecto, tipoOperacion);
+    obtenerModelosCasa(@Query() filtros:FiltrosModeloCasaDto){
+        return this.modeloCasaService.mostrarModelosCasa(filtros);
     }
 
     @Get(':id')

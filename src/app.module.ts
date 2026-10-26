@@ -1,8 +1,11 @@
-import { Module } from "@nestjs/common";
+import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { ScheduleModule } from "@nestjs/schedule";
 import { S3Module } from "./modules/s3/s3.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsuarioModule } from "./modules/usuario/usuario.module";
@@ -12,6 +15,10 @@ import { ProyectoModule } from "./modules/proyecto/proyecto.module";
 import { ModeloCasaModule } from "./modules/modeloCasa/modelo-casa.module";
 import { CaracteristicaModule } from "./modules/caracteristicas/caracteristica.module";
 import { SolicitudModule } from "./modules/solicitud/solicitud.module";
+import { AuditoriaModule } from "./modules/auditoria/auditoria.module";
+import { AuditoriaMiddleware } from "./modules/auditoria/auditoria.middleware";
+import { SaludModule } from "./modules/salud/salud.module";
+import { opcionesBaseDatos } from "./database/opciones-bd";
 
 @Module({
   imports: [
@@ -21,20 +28,14 @@ import { SolicitudModule } from "./modules/solicitud/solicitud.module";
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: "postgres",
-        host: config.get("DB_HOST"),
-        port: config.get<number>("DB_PORT"),
-        username: config.get("DB_USERNAME"),
-        password: config.get("DB_PASSWORD"),
-        database: config.get("DB_NAME"),
-        entities: [__dirname + "/**/*.entity{.ts,.js}"],
-        synchronize: true,
-        ssl: {
-          rejectUnauthorized: false,
-        },
-      }),
+      useFactory: (config: ConfigService) =>
+        opcionesBaseDatos((clave) => config.get<string>(clave)),
     }),
+    // Límite general por IP; login y formulario público tienen límites más estrictos
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ScheduleModule.forRoot(),
+    AuditoriaModule,
+    SaludModule,
     S3Module,
     AuthModule,
     UsuarioModule,
@@ -46,6 +47,10 @@ import { SolicitudModule } from "./modules/solicitud/solicitud.module";
     SolicitudModule
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuditoriaMiddleware).forRoutes("*");
+  }
+}

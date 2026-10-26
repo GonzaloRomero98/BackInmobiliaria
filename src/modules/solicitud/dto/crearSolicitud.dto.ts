@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
+import { Equals, IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class CrearSolicitudDto{
     @IsString()
@@ -25,5 +25,8 @@ export class CrearSolicitudDto{
     
     @IsUUID()
     id_modelo_casa:string;
+
+    @Equals(true, {message:'Debe aceptar la política de privacidad'})
+    aceptaPrivacidad:boolean;
 
 }

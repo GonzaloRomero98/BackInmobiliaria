@@ -1,12 +1,27 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ModeloCasa } from "./entities/modeloCasa.entity";
-import { FindOptionsWhere, In, Repository } from "typeorm";
+import { Between, FindOptionsOrder, FindOptionsWhere, In, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm";
 import { Proyecto } from "../proyecto/entities/proyecto.entity";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
 import { Caracteristica } from "../caracteristicas/entities/caracteristica.entity";
 import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
 import { AgregarFotoDto } from "./dto/agregarFoto.dto";
+import { FiltrosModeloCasaDto, OrdenModelo } from "./dto/filtrosModeloCasa.dto";
+
+const ORDEN: Record<OrdenModelo, FindOptionsOrder<ModeloCasa>> = {
+    precio_asc: {precio:'ASC'},
+    precio_desc: {precio:'DESC'},
+    superficie_desc: {superficieConstruida:'DESC'},
+    recientes: {creadoEn:'DESC'},
+};
+
+function rango(min?:number, max?:number){
+    if(min !== undefined && max !== undefined) return Between(min, max);
+    if(min !== undefined) return MoreThanOrEqual(min);
+    if(max !== undefined) return LessThanOrEqual(max);
+    return undefined;
+}
 
 @Injectable()
 export class ModeloCasaService{
@@ -39,14 +54,14 @@ export class ModeloCasaService{
             modeloCasa.superficieTerreno = crearModeloCasaDto.superficieTerreno;
             modeloCasa.precio = crearModeloCasaDto.precio;
             modeloCasa.moneda = crearModeloCasaDto.moneda;
-            modeloCasa.gastosComunes = crearModeloCasaDto.gastosComunes;
+            modeloCasa.gastosComunes = crearModeloCasaDto.gastosComunes ?? false;
             modeloCasa.modelo3dUrl = crearModeloCasaDto.modelo3dUrl;
-            modeloCasa.imgPrincipal = crearModeloCasaDto.imagenPrincipal;
+            modeloCasa.imgPrincipal = crearModeloCasaDto.imgPrincipal;
             modeloCasa.caracteristicas = [];
             if(crearModeloCasaDto.caracteristicasID?.length){
                 const ids = [... new Set(crearModeloCasaDto.caracteristicasID)];
                 const caracteristicas = await this.caracteristicaRepository.findBy({id:In(ids)});
-                if(caracteristicas.length ! == ids.length){
+                if(caracteristicas.length !== ids.length){
                     throw new BadRequestException('Algunas caracteristicas seleccionadas no existen');
                 }
                 modeloCasa.caracteristicas = caracteristicas;
@@ -55,23 +70,34 @@ export class ModeloCasaService{
         const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:modeloCasa.nombreModelo}});
 
         if(existeCasa){
-            throw new NotFoundException("Ya se ha ingresado esta propiedad")
+            throw new ConflictException("Ya se ha ingresado esta propiedad")
         }
         
         return this.modeloCasaRepository.save(modeloCasa)
 
     }
 
-    mostrarModelosCasa(id_proyecto?:string, tipoOperacion?:string):Promise<ModeloCasa[]>{
+    mostrarModelosCasa(filtros: FiltrosModeloCasaDto = {}):Promise<ModeloCasa[]>{
+        const ciudad = filtros.id_ciudad || filtros.id_region
+            ? {...(filtros.id_ciudad && {id:filtros.id_ciudad}), ...(filtros.id_region && {region:{id:filtros.id_region}})}
+            : undefined;
+
         const filtro : FindOptionsWhere<ModeloCasa> = {
             activo:true,
-            proyecto: id_proyecto ? {id:id_proyecto , activo:true} : {activo:true}
-        }
-        if(tipoOperacion){
-            filtro.tipoOperacion = tipoOperacion;
-        }
+            proyecto: {activo:true, ...(filtros.id_proyecto && {id:filtros.id_proyecto}), ...(ciudad && {ciudad})},
+            ...(filtros.tipoOperacion && {tipoOperacion:filtros.tipoOperacion}),
+            ...(filtros.moneda && {moneda:filtros.moneda}),
+            ...(filtros.mascotas !== undefined && {mascotas:filtros.mascotas}),
+        };
 
-        return this.modeloCasaRepository.find({where:filtro, order:{nombreModelo:'ASC', fotos:{orden:'ASC'}}});
+        const precio = rango(filtros.precioMin, filtros.precioMax);
+        if(precio) filtro.precio = precio;
+        if(filtros.dormitorios !== undefined) filtro.dormitorios = MoreThanOrEqual(filtros.dormitorios);
+        if(filtros.banos !== undefined) filtro.banos = MoreThanOrEqual(filtros.banos);
+        if(filtros.superficieMin !== undefined) filtro.superficieConstruida = MoreThanOrEqual(filtros.superficieMin);
+
+        const orden = filtros.orden ? ORDEN[filtros.orden] : {nombreModelo:'ASC' as const};
+        return this.modeloCasaRepository.find({where:filtro, order:{...orden, fotos:{orden:'ASC'}}});
     }
 
     async obtenerModeloByID(id:string): Promise<ModeloCasa>{
@@ -112,6 +138,6 @@ export class ModeloCasaService{
             throw new NotFoundException('Foto no encontrada');
         }
 
-        await this.galeriaRepository.recover(foto);
+        await this.galeriaRepository.remove(foto);
     }
 }

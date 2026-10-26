@@ -1,3 +1,4 @@
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { CaracteristicaService } from "./caracteristica.service";
 import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
@@ -6,6 +7,8 @@ import { Roles } from "../auth/decorator/rol.decorator";
 import { RolUsuario } from "../rol/rol.enum";
 import { CrearCaractersiticaDto } from "./dto/crearCaracteristica.dto";
 
+@ApiTags('caracteristicas')
+@ApiBearerAuth()
 @Controller('caracteristicas')
 export class CaracteristicasController{
     constructor(

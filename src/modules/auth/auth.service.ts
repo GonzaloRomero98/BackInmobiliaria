@@ -18,7 +18,7 @@ export class AuthService{
 
     async loginUsuario(loginDto:LoginDto){
         const usuario  = await this.usuarioService.usuarioPorCorreo(loginDto.correo);
-        if(!usuario){
+        if(!usuario || !usuario.activo){
             throw new UnauthorizedException('Credenciales incorrectas')
         }
 

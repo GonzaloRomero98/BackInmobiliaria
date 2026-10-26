@@ -18,11 +18,14 @@ export class Solicitud{
     @Column({length:20})
     celular:string;
 
-    @Column({type:'text', nullable:true})
-    mensjae:string | null;
+    @Column({name:'mensjae', type:'text', nullable:true})
+    mensaje:string | null;
 
     @Column({default:false})
     contactado:boolean;
+
+    @Column({name:'consentimiento_en', type:'timestamp', nullable:true})
+    consentimientoEn: Date | null;
 
     @CreateDateColumn({name:'creado_en'})
     creadoEn: Date;
