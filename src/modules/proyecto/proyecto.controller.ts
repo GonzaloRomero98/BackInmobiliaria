@@ -1,5 +1,5 @@
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { ProyectoService } from "./proyecto.service";
 import { CrearProyectoDto } from "./dto/crearProyecto.dto";
 import { ActualizarProyectoDto } from "./dto/actualizarProyecto.dto";
@@ -37,6 +37,13 @@ export class PoryectoController{
     @Roles(RolUsuario.ADMIN)
     actualizarProyecto(@Param('id', new ParseUUIDPipe) id:string, @Body() actualizarProyectoDto:ActualizarProyectoDto){
         return this.proyectoService.actualizarProyecto(id, actualizarProyectoDto);
+    }
+
+    @Delete(':id')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    despublicarProyecto(@Param('id', new ParseUUIDPipe) id:string){
+        return this.proyectoService.despublicarProyecto(id);
     }
 
     @Get(':id/entorno')

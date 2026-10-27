@@ -96,6 +96,14 @@ export class ProyectoService{
         });
     }
 
+    // Borrado lógico: el proyecto y sus modelos dejan de verse en el catálogo (las consultas filtran proyecto.activo)
+    async despublicarProyecto(id:string): Promise<void>{
+        const resultado = await this.proyectoRepository.update({id, activo:true}, {activo:false});
+        if(!resultado.affected){
+            throw new NotFoundException('El proyecto no fue encontrado');
+        }
+    }
+
     async obtenerProyectoPorID(id:string): Promise<Proyecto>{
         const proyecto = await this.proyectoRepository.findOne({where:{id,activo:true}});
         if(!proyecto){

@@ -7,6 +7,7 @@ import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
 import { Caracteristica } from "../caracteristicas/entities/caracteristica.entity";
 import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
 import { AgregarFotoDto } from "./dto/agregarFoto.dto";
+import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { FiltrosModeloCasaDto, OrdenModelo } from "./dto/filtrosModeloCasa.dto";
 
 const ORDEN: Record<OrdenModelo, FindOptionsOrder<ModeloCasa>> = {
@@ -55,26 +56,60 @@ export class ModeloCasaService{
             modeloCasa.precio = crearModeloCasaDto.precio;
             modeloCasa.moneda = crearModeloCasaDto.moneda;
             modeloCasa.gastosComunes = crearModeloCasaDto.gastosComunes ?? false;
-            modeloCasa.modelo3dUrl = crearModeloCasaDto.modelo3dUrl;
+            modeloCasa.modelo3dUrl = crearModeloCasaDto.modelo3dUrl ?? null;
             modeloCasa.imgPrincipal = crearModeloCasaDto.imgPrincipal;
-            modeloCasa.caracteristicas = [];
-            if(crearModeloCasaDto.caracteristicasID?.length){
-                const ids = [... new Set(crearModeloCasaDto.caracteristicasID)];
-                const caracteristicas = await this.caracteristicaRepository.findBy({id:In(ids)});
-                if(caracteristicas.length !== ids.length){
-                    throw new BadRequestException('Algunas caracteristicas seleccionadas no existen');
-                }
-                modeloCasa.caracteristicas = caracteristicas;
-            }
+            modeloCasa.caracteristicas = await this.buscarCaracteristicas(crearModeloCasaDto.caracteristicasID);
 
         const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:modeloCasa.nombreModelo}});
 
         if(existeCasa){
             throw new ConflictException("Ya se ha ingresado esta propiedad")
         }
-        
+
         return this.modeloCasaRepository.save(modeloCasa)
 
+    }
+
+    async actualizarModeloCasa(id:string, actualizarModeloCasaDto:ActualizarModeloCasaDto):Promise<ModeloCasa>{
+        const modelo = await this.obtenerModeloByID(id);
+        const {id_proyecto, estacionamiento, caracteristicasID, ...cambios} = actualizarModeloCasaDto;
+
+        if(id_proyecto !== undefined){
+            const proyecto = await this.proyectoRepository.findOne({where:{id:id_proyecto}});
+            if(!proyecto){
+                throw new NotFoundException('No se encuentra el proyecto');
+            }
+            modelo.proyecto = proyecto;
+        }
+        if(estacionamiento !== undefined) modelo.estacionamientos = estacionamiento;
+        if(caracteristicasID !== undefined) modelo.caracteristicas = await this.buscarCaracteristicas(caracteristicasID);
+
+        if(cambios.nombreModelo !== undefined && cambios.nombreModelo !== modelo.nombreModelo){
+            const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:cambios.nombreModelo}});
+            if(existeCasa){
+                throw new ConflictException("Ya se ha ingresado esta propiedad");
+            }
+        }
+
+        Object.assign(modelo, cambios);
+        return this.modeloCasaRepository.save(modelo);
+    }
+
+    async despublicarModeloCasa(id:string):Promise<void>{
+        const resultado = await this.modeloCasaRepository.update({id, activo:true}, {activo:false});
+        if(!resultado.affected){
+            throw new NotFoundException('No se encontro el modelo de la casa');
+        }
+    }
+
+    private async buscarCaracteristicas(ids:number[] = []):Promise<Caracteristica[]>{
+        if(!ids.length) return [];
+        const unicos = [... new Set(ids)];
+        const caracteristicas = await this.caracteristicaRepository.findBy({id:In(unicos)});
+        if(caracteristicas.length !== unicos.length){
+            throw new BadRequestException('Algunas caracteristicas seleccionadas no existen');
+        }
+        return caracteristicas;
     }
 
     mostrarModelosCasa(filtros: FiltrosModeloCasaDto = {}):Promise<ModeloCasa[]>{

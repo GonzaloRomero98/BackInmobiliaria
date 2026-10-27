@@ -48,8 +48,10 @@ export class CrearModeloCasaDto{
     @IsBoolean()
     gastosComunes:boolean;
 
+    // Opcional: no todos los modelos tienen 3D; null en una actualización lo quita
+    @IsOptional()
     @IsString()
-    modelo3dUrl:string;
+    modelo3dUrl?:string | null;
 
     @IsString()
     imgPrincipal:string;

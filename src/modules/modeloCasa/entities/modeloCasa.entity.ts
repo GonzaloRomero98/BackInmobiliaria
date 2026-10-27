@@ -42,8 +42,8 @@ export class ModeloCasa{
     @Column({name:'gastos_comunes', type:'boolean'})
     gastosComunes:boolean;
 
-    @Column({name:'modelo_3d_url', type:'varchar', nullable:false})
-    modelo3dUrl:string;
+    @Column({name:'modelo_3d_url', type:'varchar', nullable:true})
+    modelo3dUrl:string | null;
 
     @Column({name:'img_principal', type:'varchar',nullable:false})
     imgPrincipal:string;

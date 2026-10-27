@@ -15,6 +15,7 @@ const mockRepo = () => ({
   count: jest.fn(),
   save: jest.fn(async (x) => ({ ...x, id: x.id ?? 'nuevo-id' })),
   remove: jest.fn(),
+  update: jest.fn(),
 });
 
 describe('ModeloCasaService', () => {
@@ -95,6 +96,60 @@ describe('ModeloCasaService', () => {
       modeloRepo.findOne.mockResolvedValue({ id: 'otro' });
       await expect(service.crearModeloCasa(dto())).rejects.toBeInstanceOf(ConflictException);
     });
+  });
+
+  it('crear sin modelo 3D lo guarda como null', async () => {
+    proyectoRepo.findOne.mockResolvedValue({ id: 'p1' });
+    modeloRepo.findOne.mockResolvedValue(null);
+    const creado = await service.crearModeloCasa({ ...dto(), modelo3dUrl: undefined });
+    expect(creado.modelo3dUrl).toBeNull();
+  });
+
+  describe('actualizarModeloCasa', () => {
+    const existente = () => ({ id: 'm1', nombreModelo: 'Casa A', estacionamientos: 1, caracteristicas: [], proyecto: { id: 'p1' } });
+
+    it('aplica solo los campos enviados y mapea estacionamiento', async () => {
+      modeloRepo.findOne.mockResolvedValue(existente());
+      const r = await service.actualizarModeloCasa('m1', { precio: 4000, estacionamiento: 2 });
+      expect(r).toMatchObject({ id: 'm1', nombreModelo: 'Casa A', precio: 4000, estacionamientos: 2 });
+      expect(r).not.toHaveProperty('estacionamiento');
+    });
+
+    it('modelo3dUrl null quita el 3D', async () => {
+      modeloRepo.findOne.mockResolvedValue({ ...existente(), modelo3dUrl: 'https://x/m.glb' });
+      const r = await service.actualizarModeloCasa('m1', { modelo3dUrl: null });
+      expect(r.modelo3dUrl).toBeNull();
+    });
+
+    it('409 si el nombre nuevo ya lo usa otro modelo; mismo nombre no consulta', async () => {
+      modeloRepo.findOne.mockResolvedValueOnce(existente()).mockResolvedValueOnce({ id: 'otro' });
+      await expect(service.actualizarModeloCasa('m1', { nombreModelo: 'Casa B' })).rejects.toBeInstanceOf(ConflictException);
+
+      modeloRepo.findOne.mockReset().mockResolvedValue(existente());
+      await service.actualizarModeloCasa('m1', { nombreModelo: 'Casa A' });
+      expect(modeloRepo.findOne).toHaveBeenCalledTimes(1);
+    });
+
+    it('cambia proyecto y características validando que existan', async () => {
+      modeloRepo.findOne.mockResolvedValue(existente());
+      proyectoRepo.findOne.mockResolvedValue(null);
+      await expect(service.actualizarModeloCasa('m1', { id_proyecto: 'p2' })).rejects.toBeInstanceOf(NotFoundException);
+
+      caracRepo.findBy.mockResolvedValue([{ id: 1 }]);
+      await expect(service.actualizarModeloCasa('m1', { caracteristicasID: [1, 2] })).rejects.toBeInstanceOf(BadRequestException);
+
+      const r = await service.actualizarModeloCasa('m1', { caracteristicasID: [] });
+      expect(r.caracteristicas).toEqual([]);
+    });
+  });
+
+  it('despublicarModeloCasa marca activo=false; 404 si no existe o ya estaba despublicado', async () => {
+    modeloRepo.update.mockResolvedValue({ affected: 1 });
+    await service.despublicarModeloCasa('m1');
+    expect(modeloRepo.update).toHaveBeenCalledWith({ id: 'm1', activo: true }, { activo: false });
+
+    modeloRepo.update.mockResolvedValue({ affected: 0 });
+    await expect(service.despublicarModeloCasa('m1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   describe('mostrarModelosCasa', () => {

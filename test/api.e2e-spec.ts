@@ -380,6 +380,16 @@ describe('API (e2e, BD simulada)', () => {
     it('PATCH sin ser ADMIN -> 403', () =>
       http().patch(`/api/proyectos/${UUID}`).set(auth(secretarioToken)).send({ nombre: 'X' }).expect(403));
 
+    it('DELETE despublica el proyecto; inexistente -> 404; SECRETARIO -> 403', async () => {
+      repo(Proyecto).update.mockResolvedValue({ affected: 1 });
+      await http().delete(`/api/proyectos/${UUID}`).set(auth(adminToken)).expect(200);
+      expect(repo(Proyecto).update).toHaveBeenCalledWith({ id: UUID, activo: true }, { activo: false });
+
+      repo(Proyecto).update.mockResolvedValue({ affected: 0 });
+      await http().delete(`/api/proyectos/${UUID}`).set(auth(adminToken)).expect(404);
+      await http().delete(`/api/proyectos/${UUID}`).set(auth(secretarioToken)).expect(403);
+    });
+
     const normativa = {
       instrumento: 'Plan Regulador Comunal de Talca', zona: 'ZH-2', usosPermitidos: 'Residencial y equipamiento menor',
       alturaMaximaPisos: 4, alturaMaximaMetros: 14, densidadMaxima: 400, coefConstructibilidad: 1.6,
@@ -466,6 +476,36 @@ describe('API (e2e, BD simulada)', () => {
 
     it('body inválido -> 400', () =>
       http().post('/api/modeloCasa').set(auth(adminToken)).send({ ...body, banos: 0, moneda: 'USD' }).expect(400));
+
+    it('crear sin modelo 3D -> 201 con modelo3dUrl null', async () => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
+      const { modelo3dUrl: _sin3d, ...sin3d } = body;
+      await http().post('/api/modeloCasa').set(auth(adminToken)).send(sin3d).expect(201);
+      expect(repo(ModeloCasa).save.mock.calls[0][0].modelo3dUrl).toBeNull();
+    });
+
+    it('PATCH con ADMIN actualiza solo lo enviado; body inválido -> 400; SECRETARIO -> 403', async () => {
+      repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID, nombreModelo: 'Casa A', precio: 3500, caracteristicas: [] });
+      const res = await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ precio: 3900, modelo3dUrl: null }).expect(200);
+      expect(res.body).toMatchObject({ nombreModelo: 'Casa A', precio: 3900, modelo3dUrl: null });
+
+      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ moneda: 'USD' }).expect(400);
+      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(secretarioToken)).send({ precio: 1 }).expect(403);
+    });
+
+    it('PATCH de modelo inexistente o despublicado -> 404', () =>
+      http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ precio: 1 }).expect(404));
+
+    it('DELETE despublica (borrado lógico); inexistente -> 404; SECRETARIO -> 403', async () => {
+      repo(ModeloCasa).update.mockResolvedValue({ affected: 1 });
+      await http().delete(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).expect(200);
+      expect(repo(ModeloCasa).update).toHaveBeenCalledWith({ id: UUID, activo: true }, { activo: false });
+      expect(repo(ModeloCasa).delete).not.toHaveBeenCalled();
+
+      repo(ModeloCasa).update.mockResolvedValue({ affected: 0 });
+      await http().delete(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).expect(404);
+      await http().delete(`/api/modeloCasa/${UUID}`).set(auth(secretarioToken)).expect(403);
+    });
 
     it('SECRETARIO no puede crear -> 403 y el rechazo queda auditado', async () => {
       await http().post('/api/modeloCasa').set(auth(secretarioToken)).send(body).expect(403);
