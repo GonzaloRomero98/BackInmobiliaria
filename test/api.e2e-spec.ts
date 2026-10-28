@@ -493,8 +493,30 @@ describe('API (e2e, BD simulada)', () => {
       await http().patch(`/api/modeloCasa/${UUID}`).set(auth(secretarioToken)).send({ precio: 1 }).expect(403);
     });
 
-    it('PATCH de modelo inexistente o despublicado -> 404', () =>
+    it('PATCH de modelo inexistente -> 404', () =>
       http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ precio: 1 }).expect(404));
+
+    it('PATCH estado y publicar: valida el estado', async () => {
+      repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID, nombreModelo: 'Casa A', activo: false, caracteristicas: [] });
+      const res = await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ estado: 'RESERVADO', activo: true }).expect(200);
+      expect(res.body).toMatchObject({ estado: 'RESERVADO', activo: true });
+      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ estado: 'ARRENDADO' }).expect(400);
+    });
+
+    it('GET /admin lista también borradores; solo ADMIN', async () => {
+      repo(ModeloCasa).find.mockResolvedValue([{ id: UUID, activo: false }]);
+      const res = await http().get('/api/modeloCasa/admin').set(auth(adminToken)).expect(200);
+      expect(res.body).toEqual([{ id: UUID, activo: false }]);
+      expect(repo(ModeloCasa).find.mock.calls[0][0].where).toBeUndefined();
+      await http().get('/api/modeloCasa/admin').set(auth(secretarioToken)).expect(403);
+      await http().get('/api/modeloCasa/admin').expect(401);
+    });
+
+    it('GET /admin/:id devuelve un borrador; inexistente -> 404', async () => {
+      repo(ModeloCasa).findOne.mockResolvedValueOnce({ id: UUID, activo: false });
+      await http().get(`/api/modeloCasa/admin/${UUID}`).set(auth(adminToken)).expect(200);
+      await http().get(`/api/modeloCasa/admin/${UUID}`).set(auth(adminToken)).expect(404);
+    });
 
     it('DELETE despublica (borrado lógico); inexistente -> 404; SECRETARIO -> 403', async () => {
       repo(ModeloCasa).update.mockResolvedValue({ affected: 1 });
@@ -513,6 +535,63 @@ describe('API (e2e, BD simulada)', () => {
       expect(repo(Auditoria).save).toHaveBeenCalledWith(expect.objectContaining({
         estado: 403, exito: false, idUsuario: 'sec-id',
       }));
+    });
+  });
+
+  describe('usuarios (ADMIN)', () => {
+    const nuevo = { correo: 'nuevo@x.cl', nombre: 'Nuevo', rol: 'SECRETARIO', contrasena: 'Secreta12345' };
+
+    it('GET lista sin contraseñas; SECRETARIO -> 403', async () => {
+      repo(Usuario).find.mockResolvedValue([{ id: 'sec-id', correo: 'sec@x.cl', contrasena: 'hash', activo: true }]);
+      const res = await http().get('/api/usuarios').set(auth(adminToken)).expect(200);
+      expect(res.body[0]).not.toHaveProperty('contrasena');
+      await http().get('/api/usuarios').set(auth(secretarioToken)).expect(403);
+    });
+
+    it('POST crea un secretario sin devolver el hash; contraseña débil -> 400', async () => {
+      repo(Rol).findOne.mockResolvedValue({ id: 2, nombre: 'SECRETARIO' });
+      const res = await http().post('/api/usuarios').set(auth(adminToken)).send(nuevo).expect(201);
+      expect(res.body).toMatchObject({ correo: 'nuevo@x.cl', rol: { nombre: 'SECRETARIO' } });
+      expect(res.body).not.toHaveProperty('contrasena');
+      expect(res.body).not.toHaveProperty('access_token');
+      await http().post('/api/usuarios').set(auth(adminToken)).send({ ...nuevo, contrasena: 'corta' }).expect(400);
+    });
+
+    it('PATCH desactiva a otro usuario; a sí mismo -> 400; SECRETARIO -> 403', async () => {
+      const uid = '22222222-2222-4222-8222-222222222222';
+      repo(Usuario).findOne.mockImplementation(async ({ where }) =>
+        where?.id === uid ? { id: uid, contrasena: 'hash', activo: true } : usuarios[where?.id] ?? null);
+      const res = await http().patch(`/api/usuarios/${uid}`).set(auth(adminToken)).send({ activo: false }).expect(200);
+      expect(res.body).toEqual({ id: uid, activo: false });
+
+      // El propio admin (sub con formato UUID para pasar ParseUUIDPipe)
+      repo(Usuario).findOne.mockResolvedValue({ id: uid, correo: 'yo@x.cl', activo: true, rol: { nombre: 'ADMIN' } });
+      const yo = app.get(JwtService).sign({ sub: uid, correo: 'yo@x.cl', rol: 'ADMIN' });
+      const propio = await http().patch(`/api/usuarios/${uid}`).set(auth(yo)).send({ activo: false }).expect(400);
+      expect(propio.body.message).toMatch(/propia cuenta/);
+
+      repo(Usuario).findOne.mockImplementation(async ({ where }) => usuarios[where?.id] ?? null);
+      await http().patch(`/api/usuarios/${uid}`).set(auth(secretarioToken)).send({ activo: false }).expect(403);
+    });
+
+    it('PATCH me/contrasena: el SECRETARIO cambia la suya con la actual correcta', async () => {
+      const hash = await bcrypt.hash('Actual12345', 4);
+      repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], contrasena: hash }));
+      await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Mala1234567', nueva: 'Nueva123456' }).expect(400);
+      await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Actual12345', nueva: 'debil' }).expect(400);
+      await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Actual12345', nueva: 'Nueva123456' }).expect(200);
+      expect(repo(Usuario).save).toHaveBeenCalledWith(expect.objectContaining({ id: 'sec-id' }));
+    });
+  });
+
+  describe('métricas', () => {
+    it('GET con ADMIN -> 200; SECRETARIO -> 403', async () => {
+      const qb = { innerJoin: jest.fn(), select: jest.fn(), addSelect: jest.fn(), groupBy: jest.fn(), orderBy: jest.fn(), limit: jest.fn(), getRawMany: jest.fn().mockResolvedValue([]) };
+      for (const m of ['innerJoin', 'select', 'addSelect', 'groupBy', 'orderBy', 'limit'] as const) qb[m].mockReturnValue(qb);
+      repo(Solicitud).createQueryBuilder.mockReturnValueOnce(qb);
+      const res = await http().get('/api/metricas').set(auth(adminToken)).expect(200);
+      expect(res.body).toMatchObject({ solicitudes: { pendientes: 0 }, modelos: { publicados: 0 }, masSolicitados: [] });
+      await http().get('/api/metricas').set(auth(secretarioToken)).expect(403);
     });
   });
 

@@ -6,6 +6,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./strategy/jwt.strategy";
+import { UsuarioController } from "../usuario/usuario.controller";
 
 @Module({
     imports:[UsuarioModule, 
@@ -19,7 +20,8 @@ import { JwtStrategy } from "./strategy/jwt.strategy";
             }),
         }),
     ],
-    controllers:[AuthController],
+    // UsuarioController vive aquí: UsuarioModule no puede importar AuthModule (dependencia circular)
+    controllers:[AuthController, UsuarioController],
     providers:[AuthService, JwtStrategy],
     exports:[PassportModule, JwtModule]
 })

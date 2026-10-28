@@ -28,6 +28,20 @@ export class ModeloCasaController{
         return this.modeloCasaService.mostrarModelosCasa(filtros);
     }
 
+    @Get('admin')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    listarModelosAdmin(){
+        return this.modeloCasaService.listarModelosAdmin();
+    }
+
+    @Get('admin/:id')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    obtenerModeloAdmin(@Param('id', ParseUUIDPipe) id:string){
+        return this.modeloCasaService.obtenerModeloAdmin(id);
+    }
+
     @Get(':id')
     obtenerModeloCasaById(@Param('id', ParseUUIDPipe) id:string){
         return this.modeloCasaService.obtenerModeloByID(id);

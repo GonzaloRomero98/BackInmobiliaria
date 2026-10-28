@@ -6,7 +6,7 @@ import { Proyecto } from '../proyecto/entities/proyecto.entity';
 import { Caracteristica } from '../caracteristicas/entities/caracteristica.entity';
 import { GaleriaModeloCasa } from './entities/galeriaModeloCasa.entity';
 import { CrearModeloCasaDto } from './dto/CrearModeloCasa.dto';
-import { Moneda, TipoOperacion } from './modelo-casa.enum';
+import { EstadoModelo, Moneda, TipoOperacion } from './modelo-casa.enum';
 
 const mockRepo = () => ({
   findOne: jest.fn(),
@@ -105,8 +105,24 @@ describe('ModeloCasaService', () => {
     expect(creado.modelo3dUrl).toBeNull();
   });
 
+  it('crear: por defecto DISPONIBLE y publicado; acepta estado y borrador', async () => {
+    proyectoRepo.findOne.mockResolvedValue({ id: 'p1' });
+    modeloRepo.findOne.mockResolvedValue(null);
+    expect(await service.crearModeloCasa(dto())).toMatchObject({ estado: 'DISPONIBLE', activo: true });
+
+    const borrador = await service.crearModeloCasa({ ...dto(), estado: EstadoModelo.RESERVADO, activo: false });
+    expect(borrador).toMatchObject({ estado: 'RESERVADO', activo: false });
+  });
+
   describe('actualizarModeloCasa', () => {
     const existente = () => ({ id: 'm1', nombreModelo: 'Casa A', estacionamientos: 1, caracteristicas: [], proyecto: { id: 'p1' } });
+
+    it('busca sin filtrar por publicado (un borrador se puede editar y publicar)', async () => {
+      modeloRepo.findOne.mockResolvedValue({ ...existente(), activo: false });
+      const r = await service.actualizarModeloCasa('m1', { activo: true, estado: EstadoModelo.VENDIDO });
+      expect(modeloRepo.findOne.mock.calls[0][0].where).toEqual({ id: 'm1' });
+      expect(r).toMatchObject({ activo: true, estado: 'VENDIDO' });
+    });
 
     it('aplica solo los campos enviados y mapea estacionamiento', async () => {
       modeloRepo.findOne.mockResolvedValue(existente());

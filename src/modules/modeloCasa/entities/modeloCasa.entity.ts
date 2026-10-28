@@ -3,6 +3,7 @@ import { Proyecto } from "../../proyecto/entities/proyecto.entity";
 import { Caracteristica } from "../../caracteristicas/entities/caracteristica.entity";
 import { GaleriaModeloCasa } from "./galeriaModeloCasa.entity";
 import { decimalANumero } from "../../../database/transformadores";
+import { EstadoModelo } from "../modelo-casa.enum";
 
 @Entity('modelo_casa')
 export class ModeloCasa{
@@ -47,6 +48,10 @@ export class ModeloCasa{
 
     @Column({name:'img_principal', type:'varchar',nullable:false})
     imgPrincipal:string;
+
+    // Disponibilidad comercial (DISPONIBLE/RESERVADO/VENDIDO); "activo" indica publicado o borrador
+    @Column({type:'varchar', length:20, default:EstadoModelo.DISPONIBLE})
+    estado:string;
 
     @Column({default:true})
     activo:boolean;

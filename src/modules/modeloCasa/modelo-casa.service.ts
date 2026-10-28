@@ -9,6 +9,7 @@ import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
 import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { FiltrosModeloCasaDto, OrdenModelo } from "./dto/filtrosModeloCasa.dto";
+import { EstadoModelo } from "./modelo-casa.enum";
 
 const ORDEN: Record<OrdenModelo, FindOptionsOrder<ModeloCasa>> = {
     precio_asc: {precio:'ASC'},
@@ -59,6 +60,8 @@ export class ModeloCasaService{
             modeloCasa.modelo3dUrl = crearModeloCasaDto.modelo3dUrl ?? null;
             modeloCasa.imgPrincipal = crearModeloCasaDto.imgPrincipal;
             modeloCasa.caracteristicas = await this.buscarCaracteristicas(crearModeloCasaDto.caracteristicasID);
+            modeloCasa.estado = crearModeloCasaDto.estado ?? EstadoModelo.DISPONIBLE;
+            modeloCasa.activo = crearModeloCasaDto.activo ?? true;
 
         const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:modeloCasa.nombreModelo}});
 
@@ -71,7 +74,7 @@ export class ModeloCasaService{
     }
 
     async actualizarModeloCasa(id:string, actualizarModeloCasaDto:ActualizarModeloCasaDto):Promise<ModeloCasa>{
-        const modelo = await this.obtenerModeloByID(id);
+        const modelo = await this.obtenerModeloAdmin(id);
         const {id_proyecto, estacionamiento, caracteristicasID, ...cambios} = actualizarModeloCasaDto;
 
         if(id_proyecto !== undefined){
@@ -142,6 +145,19 @@ export class ModeloCasaService{
             throw new NotFoundException('No se encontro el modelo de la casa');
         }
 
+        return modelo;
+    }
+
+    // Panel admin: incluye borradores y modelos de proyectos despublicados
+    listarModelosAdmin():Promise<ModeloCasa[]>{
+        return this.modeloCasaRepository.find({order:{nombreModelo:'ASC', fotos:{orden:'ASC'}}});
+    }
+
+    async obtenerModeloAdmin(id:string):Promise<ModeloCasa>{
+        const modelo = await this.modeloCasaRepository.findOne({where:{id}, order:{fotos:{orden:'ASC'}}});
+        if(!modelo){
+            throw new NotFoundException('No se encontro el modelo de la casa');
+        }
         return modelo;
     }
 

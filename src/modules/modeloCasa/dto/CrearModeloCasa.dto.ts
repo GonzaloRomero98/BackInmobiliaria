@@ -1,5 +1,5 @@
 import { IsArray, IsBoolean, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MaxLength, Min } from "class-validator";
-import { Moneda, TipoOperacion } from "../modelo-casa.enum";
+import { EstadoModelo, Moneda, TipoOperacion } from "../modelo-casa.enum";
 
 export class CrearModeloCasaDto{
     @IsUUID()
@@ -48,7 +48,6 @@ export class CrearModeloCasaDto{
     @IsBoolean()
     gastosComunes:boolean;
 
-    // Opcional: no todos los modelos tienen 3D; null en una actualización lo quita
     @IsOptional()
     @IsString()
     modelo3dUrl?:string | null;
@@ -59,4 +58,13 @@ export class CrearModeloCasaDto{
     @IsArray()
     @IsInt({each:true})
     caracteristicasID:number[];
+
+    @IsOptional()
+    @IsEnum(EstadoModelo)
+    estado?:EstadoModelo;
+
+    // false = borrador: no se ve en el catálogo
+    @IsOptional()
+    @IsBoolean()
+    activo?:boolean;
 }

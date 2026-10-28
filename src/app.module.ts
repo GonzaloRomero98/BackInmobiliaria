@@ -18,6 +18,7 @@ import { SolicitudModule } from "./modules/solicitud/solicitud.module";
 import { AuditoriaModule } from "./modules/auditoria/auditoria.module";
 import { AuditoriaMiddleware } from "./modules/auditoria/auditoria.middleware";
 import { SaludModule } from "./modules/salud/salud.module";
+import { MetricasModule } from "./modules/metricas/metricas.module";
 import { opcionesBaseDatos } from "./database/opciones-bd";
 
 @Module({
@@ -44,7 +45,8 @@ import { opcionesBaseDatos } from "./database/opciones-bd";
     ProyectoModule,
     ModeloCasaModule,
     CaracteristicaModule,
-    SolicitudModule
+    SolicitudModule,
+    MetricasModule
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
