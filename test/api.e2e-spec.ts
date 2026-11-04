@@ -14,7 +14,6 @@ import { Proyecto } from '../src/modules/proyecto/entities/proyecto.entity';
 import { Ciudad } from '../src/modules/ubicacion/entities/ciudad.entity';
 import { Region } from '../src/modules/ubicacion/entities/region.entity';
 import { ModeloCasa } from '../src/modules/modeloCasa/entities/modeloCasa.entity';
-import { GaleriaModeloCasa } from '../src/modules/modeloCasa/entities/galeriaModeloCasa.entity';
 import { Solicitud } from '../src/modules/solicitud/entities/solicitud.entity';
 import { Auditoria } from '../src/modules/auditoria/entities/auditoria.entity';
 import { NormativaProyecto } from '../src/modules/proyecto/entities/normativaProyecto.entity';
@@ -519,15 +518,34 @@ describe('API (e2e, BD simulada)', () => {
       await http().get(`/api/modeloCasa/admin/${UUID}`).set(auth(adminToken)).expect(404);
     });
 
-    it('POST /:id/duplicar crea un borrador copia; inexistente -> 404; SECRETARIO -> 403', async () => {
-      repo(ModeloCasa).findOne.mockResolvedValueOnce({ id: 'orig', nombreModelo: 'Casa A', activo: true, fotos: [], caracteristicas: [] });
-      repo(GaleriaModeloCasa).save.mockResolvedValueOnce([]);
-      const res = await http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(adminToken)).expect(201);
-      expect(res.body).toMatchObject({ id: UUID, nombreModelo: 'Casa A (copia)', activo: false });
+    it('POST /:id/duplicar crea un borrador con el nombre enviado (sin espacios al borde); inexistente -> 404; SECRETARIO -> 403', async () => {
+      const url = `/api/modeloCasa/${UUID}/duplicar`;
+      const original = { id: 'orig', nombreModelo: 'Casa A', activo: true, fotos: [], caracteristicas: [] };
+      repo(ModeloCasa).findOne.mockResolvedValueOnce(original);
+      const res = await http().post(url).set(auth(adminToken)).send({ nombreModelo: '  Casa B  ' }).expect(201);
+      expect(res.body).toMatchObject({ id: UUID, nombreModelo: 'Casa B', activo: false });
 
-      await http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(adminToken)).expect(404);
-      await http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(secretarioToken)).expect(403);
+      await http().post(url).set(auth(adminToken)).send({ nombreModelo: 'Casa B' }).expect(404);
+      await http().post(url).set(auth(secretarioToken)).send({ nombreModelo: 'Casa B' }).expect(403);
+      await http().post(url).send({ nombreModelo: 'Casa B' }).expect(401);
     });
+
+    it('POST /:id/duplicar con nombre en uso -> 409 y no guarda', async () => {
+      repo(ModeloCasa).findOne
+        .mockResolvedValueOnce({ id: 'orig', nombreModelo: 'Casa A', fotos: [], caracteristicas: [] })
+        .mockResolvedValueOnce({ id: 'otro', nombreModelo: 'Casa A' });
+      const res = await http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(adminToken)).send({ nombreModelo: 'Casa A' }).expect(409);
+      expect(res.body.message).toContain('Ya existe un modelo con el nombre "Casa A"');
+      expect(repo(ModeloCasa).save).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{}],
+      [{ nombreModelo: '' }],
+      [{ nombreModelo: '   ' }],
+      [{ nombreModelo: 'a'.repeat(151) }],
+    ])('POST /:id/duplicar con nombre inválido %j -> 400', (body) =>
+      http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(adminToken)).send(body).expect(400));
 
     it('DELETE despublica (borrado lógico); inexistente -> 404; SECRETARIO -> 403', async () => {
       repo(ModeloCasa).update.mockResolvedValue({ affected: 1 });

@@ -71,6 +71,7 @@ export class ModeloCasa{
     })
     caracteristicas: Caracteristica[];
 
-    @OneToMany(()=> GaleriaModeloCasa,(foto) => foto.modeloCasa,{eager:true})
+    // cascade insert: al duplicar, el modelo y su galería se guardan en la misma transacción
+    @OneToMany(()=> GaleriaModeloCasa,(foto) => foto.modeloCasa,{eager:true, cascade:['insert']})
     fotos:GaleriaModeloCasa[];
 }

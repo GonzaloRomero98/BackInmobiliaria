@@ -9,6 +9,7 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { FiltrosModeloCasaDto } from "./dto/filtrosModeloCasa.dto";
 import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
+import { DuplicarModeloCasaDto } from "./dto/duplicarModeloCasa.dto";
 
 @ApiTags('modelos de casa')
 @ApiBearerAuth()
@@ -64,8 +65,8 @@ export class ModeloCasaController{
     @Post(':id/duplicar')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
-    duplicarModeloCasa(@Param('id', ParseUUIDPipe) id:string){
-        return this.modeloCasaService.duplicarModeloCasa(id);
+    duplicarModeloCasa(@Param('id', ParseUUIDPipe) id:string, @Body() dto:DuplicarModeloCasaDto){
+        return this.modeloCasaService.duplicarModeloCasa(id, dto.nombreModelo);
     }
 
     @Post(':id/fotos')

@@ -166,39 +166,52 @@ describe('ModeloCasaService', () => {
       fotos: [{ id: 'f1', urlImagen: 'https://x/1.jpg', orden: 0 }, { id: 'f2', urlImagen: 'https://x/2.jpg', orden: 1 }],
     });
 
-    it('copia datos, características y fotos como borrador DISPONIBLE con nombre libre', async () => {
-      modeloRepo.findOne
-        .mockResolvedValueOnce(original())
-        .mockResolvedValueOnce({ id: 'otro' }) // "Casa A (copia)" ya existe
-        .mockResolvedValueOnce(null);
-      galeriaRepo.save.mockImplementation(async (x) => x);
+    it('copia datos, características y fotos como borrador DISPONIBLE con el nombre elegido, en un solo save', async () => {
+      modeloRepo.findOne.mockResolvedValueOnce(original()).mockResolvedValueOnce(null);
 
-      const copia = await service.duplicarModeloCasa('m1');
+      const copia = await service.duplicarModeloCasa('m1', 'Casa B');
 
+      expect(modeloRepo.findOne).toHaveBeenLastCalledWith({ where: { nombreModelo: 'Casa B' } });
+      expect(modeloRepo.save).toHaveBeenCalledTimes(1);
+      expect(galeriaRepo.save).not.toHaveBeenCalled();
       const guardado = modeloRepo.save.mock.calls[0][0];
       expect(guardado).toMatchObject({
-        nombreModelo: 'Casa A (copia 2)', precio: 3500, activo: false, estado: EstadoModelo.DISPONIBLE,
+        nombreModelo: 'Casa B', precio: 3500, activo: false, estado: EstadoModelo.DISPONIBLE,
         proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: 'https://x/i.jpg',
       });
       expect(guardado.id).toBeUndefined();
       expect(guardado.creadoEn).toBeUndefined();
-      expect(galeriaRepo.save.mock.calls[0][0]).toEqual([
-        expect.objectContaining({ urlImagen: 'https://x/1.jpg', orden: 0, modeloCasa: { id: 'nuevo-id' } }),
-        expect.objectContaining({ urlImagen: 'https://x/2.jpg', orden: 1, modeloCasa: { id: 'nuevo-id' } }),
+      // Fotos nuevas (sin id) con las mismas URLs: la cascada las inserta en la misma transacción
+      expect(guardado.fotos).toEqual([
+        expect.objectContaining({ urlImagen: 'https://x/1.jpg', orden: 0 }),
+        expect.objectContaining({ urlImagen: 'https://x/2.jpg', orden: 1 }),
       ]);
-      expect(galeriaRepo.save.mock.calls[0][0][0].id).toBeUndefined();
+      expect(guardado.fotos[0].id).toBeUndefined();
       expect(copia.fotos).toHaveLength(2);
     });
 
-    it('recorta nombres largos para no pasar de 150 caracteres', async () => {
-      modeloRepo.findOne.mockResolvedValueOnce({ ...original(), nombreModelo: 'a'.repeat(150) }).mockResolvedValue(null);
-      await service.duplicarModeloCasa('m1');
-      expect(modeloRepo.save.mock.calls[0][0].nombreModelo.length).toBeLessThanOrEqual(150);
+    it('409 sin guardar nada si el nombre ya lo usa otro modelo (no inventa sufijos)', async () => {
+      modeloRepo.findOne.mockResolvedValueOnce(original()).mockResolvedValueOnce({ id: 'otro', nombreModelo: 'Casa A (copia)' });
+      await expect(service.duplicarModeloCasa('m1', 'Casa A (copia)')).rejects.toBeInstanceOf(ConflictException);
+      expect(modeloRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('409 si se intenta duplicar con el mismo nombre del original', async () => {
+      modeloRepo.findOne.mockResolvedValueOnce(original()).mockResolvedValueOnce(original());
+      await expect(service.duplicarModeloCasa('m1', 'Casa A')).rejects.toBeInstanceOf(ConflictException);
+      expect(modeloRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('si falla el guardado propaga el error y no intenta nada más', async () => {
+      modeloRepo.findOne.mockResolvedValueOnce(original()).mockResolvedValueOnce(null);
+      modeloRepo.save.mockRejectedValueOnce(new Error('BD caída'));
+      await expect(service.duplicarModeloCasa('m1', 'Casa B')).rejects.toThrow('BD caída');
+      expect(galeriaRepo.save).not.toHaveBeenCalled();
     });
 
     it('404 si el original no existe', async () => {
       modeloRepo.findOne.mockResolvedValue(null);
-      await expect(service.duplicarModeloCasa('m1')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.duplicarModeloCasa('m1', 'Casa B')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
