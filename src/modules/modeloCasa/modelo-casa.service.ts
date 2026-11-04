@@ -115,6 +115,13 @@ export class ModeloCasaService{
         }));
     }
 
+    // El formulario lo consulta antes de subir la imagen y el .glb a S3: con un nombre repetido no se sube nada.
+    // Misma regla que crear/actualizar (coincidencia exacta); excluirId = el modelo que se está editando.
+    async nombreDisponible(nombreModelo:string, excluirId?:string):Promise<{disponible:boolean}>{
+        const existente = await this.modeloCasaRepository.findOne({where:{nombreModelo}});
+        return {disponible: !existente || existente.id === excluirId};
+    }
+
     async despublicarModeloCasa(id:string):Promise<void>{
         const resultado = await this.modeloCasaRepository.update({id, activo:true}, {activo:false});
         if(!resultado.affected){

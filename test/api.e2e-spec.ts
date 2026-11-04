@@ -530,6 +530,26 @@ describe('API (e2e, BD simulada)', () => {
       await http().post(url).send({ nombreModelo: 'Casa B' }).expect(401);
     });
 
+    it('GET /admin/nombre-disponible responde antes que /admin/:id; valida nombre y excluirId; solo ADMIN', async () => {
+      const url = '/api/modeloCasa/admin/nombre-disponible';
+      repo(ModeloCasa).findOne.mockResolvedValueOnce(null);
+      expect((await http().get(`${url}?nombre=${encodeURIComponent('  Casa Z ')}`).set(auth(adminToken)).expect(200)).body).toEqual({ disponible: true });
+      expect(repo(ModeloCasa).findOne).toHaveBeenLastCalledWith({ where: { nombreModelo: 'Casa Z' } });
+
+      repo(ModeloCasa).findOne.mockResolvedValueOnce({ id: 'otro' });
+      expect((await http().get(`${url}?nombre=Casa%20A`).set(auth(adminToken)).expect(200)).body).toEqual({ disponible: false });
+
+      repo(ModeloCasa).findOne.mockResolvedValueOnce({ id: UUID });
+      expect((await http().get(`${url}?nombre=Casa%20A&excluirId=${UUID}`).set(auth(adminToken)).expect(200)).body).toEqual({ disponible: true });
+
+      await http().get(url).set(auth(adminToken)).expect(400);
+      await http().get(`${url}?nombre=%20%20`).set(auth(adminToken)).expect(400);
+      await http().get(`${url}?nombre=${'a'.repeat(151)}`).set(auth(adminToken)).expect(400);
+      await http().get(`${url}?nombre=Casa&excluirId=no-es-uuid`).set(auth(adminToken)).expect(400);
+      await http().get(`${url}?nombre=Casa`).set(auth(secretarioToken)).expect(403);
+      await http().get(`${url}?nombre=Casa`).expect(401);
+    });
+
     it('POST /:id/duplicar con nombre en uso -> 409 y no guarda', async () => {
       repo(ModeloCasa).findOne
         .mockResolvedValueOnce({ id: 'orig', nombreModelo: 'Casa A', fotos: [], caracteristicas: [] })

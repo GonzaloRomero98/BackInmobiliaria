@@ -159,6 +159,25 @@ describe('ModeloCasaService', () => {
     });
   });
 
+  describe('nombreDisponible', () => {
+    it('libre si nadie lo usa', async () => {
+      modeloRepo.findOne.mockResolvedValue(null);
+      expect(await service.nombreDisponible('Casa Z')).toEqual({ disponible: true });
+      expect(modeloRepo.findOne).toHaveBeenCalledWith({ where: { nombreModelo: 'Casa Z' } });
+    });
+
+    it('ocupado si lo usa otro modelo', async () => {
+      modeloRepo.findOne.mockResolvedValue({ id: 'otro' });
+      expect(await service.nombreDisponible('Casa A')).toEqual({ disponible: false });
+      expect(await service.nombreDisponible('Casa A', 'm1')).toEqual({ disponible: false });
+    });
+
+    it('al editar, el nombre propio del modelo cuenta como libre', async () => {
+      modeloRepo.findOne.mockResolvedValue({ id: 'm1' });
+      expect(await service.nombreDisponible('Casa A', 'm1')).toEqual({ disponible: true });
+    });
+  });
+
   describe('duplicarModeloCasa', () => {
     const original = () => ({
       id: 'm1', creadoEn: new Date(), nombreModelo: 'Casa A', precio: 3500, activo: true, estado: EstadoModelo.VENDIDO,

@@ -1,5 +1,5 @@
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ModeloCasaService } from "./modelo-casa.service";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
 import { Roles } from "../auth/decorator/rol.decorator";
@@ -34,6 +34,21 @@ export class ModeloCasaController{
     @Roles(RolUsuario.ADMIN)
     listarModelosAdmin(){
         return this.modeloCasaService.listarModelosAdmin();
+    }
+
+    // Declarada antes de admin/:id para que "nombre-disponible" no se tome como un id
+    @Get('admin/nombre-disponible')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    nombreDisponible(
+        @Query('nombre') nombre:string,
+        @Query('excluirId', new ParseUUIDPipe({optional:true})) excluirId?:string,
+    ){
+        const limpio = typeof nombre === 'string' ? nombre.trim() : '';
+        if(!limpio || limpio.length > 150){
+            throw new BadRequestException('Debe indicar un nombre de 1 a 150 caracteres');
+        }
+        return this.modeloCasaService.nombreDisponible(limpio, excluirId);
     }
 
     @Get('admin/:id')
