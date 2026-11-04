@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Header, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Request } from "express";
 import { Throttle } from "@nestjs/throttler";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { isEmail } from "class-validator";
@@ -27,6 +28,16 @@ export class SolicitudController{
     @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
     mostrarSolicitudes(){
         return this.solicitudService.mostrarSolicitudes()
+    }
+
+    @Get('exportar')
+    @ApiBearerAuth()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
+    @Header('Content-Type', 'text/csv; charset=utf-8')
+    @Header('Content-Disposition', 'attachment; filename="solicitudes.csv"')
+    exportarSolicitudes(@Req() req:Request & {user:{id:string, correo:string, rol:string}}){
+        return this.solicitudService.exportarCsv(req.user);
     }
 
     @Patch(':id/contactado')

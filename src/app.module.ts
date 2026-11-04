@@ -17,7 +17,7 @@ import { CaracteristicaModule } from "./modules/caracteristicas/caracteristica.m
 import { SolicitudModule } from "./modules/solicitud/solicitud.module";
 import { AuditoriaModule } from "./modules/auditoria/auditoria.module";
 import { AuditoriaMiddleware } from "./modules/auditoria/auditoria.middleware";
-import { SaludModule } from "./modules/salud/salud.module";
+import { EstadoBaseDatosModule } from "./modules/estadoBaseDatos/estado-base-datos.module";
 import { MetricasModule } from "./modules/metricas/metricas.module";
 import { opcionesBaseDatos } from "./database/opciones-bd";
 
@@ -36,7 +36,7 @@ import { opcionesBaseDatos } from "./database/opciones-bd";
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     ScheduleModule.forRoot(),
     AuditoriaModule,
-    SaludModule,
+    EstadoBaseDatosModule,
     S3Module,
     AuthModule,
     UsuarioModule,

@@ -3,10 +3,10 @@ import { SkipThrottle } from "@nestjs/throttler";
 import { ApiTags } from "@nestjs/swagger";
 import { DataSource } from "typeorm";
 
-@ApiTags('salud')
+@ApiTags('estado base de datos')
 @SkipThrottle()
 @Controller('health')
-export class SaludController{
+export class EstadoBaseDatosController{
     constructor(private readonly dataSource: DataSource){}
 
     @Get()

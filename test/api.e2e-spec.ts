@@ -14,6 +14,7 @@ import { Proyecto } from '../src/modules/proyecto/entities/proyecto.entity';
 import { Ciudad } from '../src/modules/ubicacion/entities/ciudad.entity';
 import { Region } from '../src/modules/ubicacion/entities/region.entity';
 import { ModeloCasa } from '../src/modules/modeloCasa/entities/modeloCasa.entity';
+import { GaleriaModeloCasa } from '../src/modules/modeloCasa/entities/galeriaModeloCasa.entity';
 import { Solicitud } from '../src/modules/solicitud/entities/solicitud.entity';
 import { Auditoria } from '../src/modules/auditoria/entities/auditoria.entity';
 import { NormativaProyecto } from '../src/modules/proyecto/entities/normativaProyecto.entity';
@@ -167,7 +168,7 @@ describe('API (e2e, BD simulada)', () => {
     });
   });
 
-  describe('salud y documentación', () => {
+  describe('estado de la base de datos y documentación', () => {
     it('GET /api/health -> 200 con la BD conectada', async () => {
       const res = await http().get('/api/health').expect(200);
       expect(res.body).toMatchObject({ estado: 'ok', baseDatos: 'ok' });
@@ -518,6 +519,16 @@ describe('API (e2e, BD simulada)', () => {
       await http().get(`/api/modeloCasa/admin/${UUID}`).set(auth(adminToken)).expect(404);
     });
 
+    it('POST /:id/duplicar crea un borrador copia; inexistente -> 404; SECRETARIO -> 403', async () => {
+      repo(ModeloCasa).findOne.mockResolvedValueOnce({ id: 'orig', nombreModelo: 'Casa A', activo: true, fotos: [], caracteristicas: [] });
+      repo(GaleriaModeloCasa).save.mockResolvedValueOnce([]);
+      const res = await http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(adminToken)).expect(201);
+      expect(res.body).toMatchObject({ id: UUID, nombreModelo: 'Casa A (copia)', activo: false });
+
+      await http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(adminToken)).expect(404);
+      await http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(secretarioToken)).expect(403);
+    });
+
     it('DELETE despublica (borrado lógico); inexistente -> 404; SECRETARIO -> 403', async () => {
       repo(ModeloCasa).update.mockResolvedValue({ affected: 1 });
       await http().delete(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).expect(200);
@@ -630,6 +641,17 @@ describe('API (e2e, BD simulada)', () => {
     });
 
     it('GET sin token -> 401', () => http().get('/api/solicitudes').expect(401));
+
+    it('GET /exportar descarga CSV para SECRETARIO y queda auditado; sin token -> 401', async () => {
+      const res = await http().get('/api/solicitudes/exportar').set(auth(secretarioToken)).expect(200);
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['content-disposition']).toContain('solicitudes.csv');
+      expect(res.text).toContain('Fecha;Nombre;Apellido');
+      await esperarAuditoria();
+      expect(repo(Auditoria).create).toHaveBeenCalledWith(expect.objectContaining({ accion: 'EXPORTAR_SOLICITUDES', idUsuario: 'sec-id' }));
+
+      await http().get('/api/solicitudes/exportar').expect(401);
+    });
 
     it('GET con SECRETARIO -> 200', () =>
       http().get('/api/solicitudes').set(auth(secretarioToken)).expect(200));

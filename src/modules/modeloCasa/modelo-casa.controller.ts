@@ -61,6 +61,13 @@ export class ModeloCasaController{
         return this.modeloCasaService.despublicarModeloCasa(id);
     }
 
+    @Post(':id/duplicar')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    duplicarModeloCasa(@Param('id', ParseUUIDPipe) id:string){
+        return this.modeloCasaService.duplicarModeloCasa(id);
+    }
+
     @Post(':id/fotos')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)

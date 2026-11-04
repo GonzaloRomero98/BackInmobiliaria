@@ -159,6 +159,49 @@ describe('ModeloCasaService', () => {
     });
   });
 
+  describe('duplicarModeloCasa', () => {
+    const original = () => ({
+      id: 'm1', creadoEn: new Date(), nombreModelo: 'Casa A', precio: 3500, activo: true, estado: EstadoModelo.VENDIDO,
+      proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: 'https://x/i.jpg',
+      fotos: [{ id: 'f1', urlImagen: 'https://x/1.jpg', orden: 0 }, { id: 'f2', urlImagen: 'https://x/2.jpg', orden: 1 }],
+    });
+
+    it('copia datos, características y fotos como borrador DISPONIBLE con nombre libre', async () => {
+      modeloRepo.findOne
+        .mockResolvedValueOnce(original())
+        .mockResolvedValueOnce({ id: 'otro' }) // "Casa A (copia)" ya existe
+        .mockResolvedValueOnce(null);
+      galeriaRepo.save.mockImplementation(async (x) => x);
+
+      const copia = await service.duplicarModeloCasa('m1');
+
+      const guardado = modeloRepo.save.mock.calls[0][0];
+      expect(guardado).toMatchObject({
+        nombreModelo: 'Casa A (copia 2)', precio: 3500, activo: false, estado: EstadoModelo.DISPONIBLE,
+        proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: 'https://x/i.jpg',
+      });
+      expect(guardado.id).toBeUndefined();
+      expect(guardado.creadoEn).toBeUndefined();
+      expect(galeriaRepo.save.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ urlImagen: 'https://x/1.jpg', orden: 0, modeloCasa: { id: 'nuevo-id' } }),
+        expect.objectContaining({ urlImagen: 'https://x/2.jpg', orden: 1, modeloCasa: { id: 'nuevo-id' } }),
+      ]);
+      expect(galeriaRepo.save.mock.calls[0][0][0].id).toBeUndefined();
+      expect(copia.fotos).toHaveLength(2);
+    });
+
+    it('recorta nombres largos para no pasar de 150 caracteres', async () => {
+      modeloRepo.findOne.mockResolvedValueOnce({ ...original(), nombreModelo: 'a'.repeat(150) }).mockResolvedValue(null);
+      await service.duplicarModeloCasa('m1');
+      expect(modeloRepo.save.mock.calls[0][0].nombreModelo.length).toBeLessThanOrEqual(150);
+    });
+
+    it('404 si el original no existe', async () => {
+      modeloRepo.findOne.mockResolvedValue(null);
+      await expect(service.duplicarModeloCasa('m1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   it('despublicarModeloCasa marca activo=false; 404 si no existe o ya estaba despublicado', async () => {
     modeloRepo.update.mockResolvedValue({ affected: 1 });
     await service.despublicarModeloCasa('m1');

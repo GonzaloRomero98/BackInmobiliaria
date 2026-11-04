@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FindOperator, Repository } from 'typeorm';
-import { SolicitudService } from './solicitud.service';
+import { celdaCsv, SolicitudService } from './solicitud.service';
 import { Solicitud } from './entities/solicitud.entity';
 import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -90,6 +90,39 @@ describe('SolicitudService', () => {
     const res = await service.eliminarPorCorreo('J_P@p.cl');
     expect(qb.where).toHaveBeenCalledWith('LOWER(correo) = LOWER(:correo)', { correo: 'J_P@p.cl' });
     expect(res).toEqual({ eliminadas: 2 });
+  });
+
+  describe('exportarCsv', () => {
+    const usuario = { id: 'u1', correo: 'a@x.cl', rol: 'SECRETARIO' };
+
+    it('genera CSV con BOM y ";", escapa comillas y saltos, y audita la exportación', async () => {
+      solicitudRepo.find.mockResolvedValue([{
+        creadoEn: new Date('2026-10-01T12:00:00Z'), nombre: 'Ana', apellido: 'Díaz', correo: 'a@b.cl', celular: '+56 9 1111 1111',
+        mensaje: 'Hola; "quiero"\nvisitar', contactado: false,
+        modeloCasa: { nombreModelo: 'Casa A', proyecto: { nombre: 'Los Robles' } },
+      }]);
+
+      const csv = await service.exportarCsv(usuario);
+
+      expect(csv.startsWith('﻿Fecha;Nombre;')).toBe(true);
+      expect(csv.split('\r\n')[1]).toBe(
+        '2026-10-01T12:00:00.000Z;Ana;Díaz;a@b.cl;+56 9 1111 1111;Los Robles;Casa A;"Hola; ""quiero""\nvisitar";Pendiente',
+      );
+      expect(auditoria.registrar).toHaveBeenCalledWith({
+        accion: 'EXPORTAR_SOLICITUDES', exito: true, idUsuario: 'u1', correo: 'a@x.cl', rol: 'SECRETARIO', detalle: { cantidad: 1 },
+      });
+    });
+
+    it.each([
+      ['=HYPERLINK("x")', `"'=HYPERLINK(""x"")"`],
+      ['@SUM(1)', "'@SUM(1)"],
+      ['+1+cmd', "'+1+cmd"],
+      ['-2+3', "'-2+3"],
+      ['+56911111111', '+56911111111'],
+      ['texto', 'texto'],
+    ])('neutraliza fórmulas: %s', (valor, esperado) => {
+      expect(celdaCsv(valor)).toBe(esperado);
+    });
   });
 
   describe('retención', () => {

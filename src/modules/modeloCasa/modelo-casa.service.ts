@@ -98,6 +98,25 @@ export class ModeloCasaService{
         return this.modeloCasaRepository.save(modelo);
     }
 
+    // La copia nace como borrador DISPONIBLE y reutiliza las mismas fotos de S3 (eliminarFoto solo borra la fila)
+    async duplicarModeloCasa(id:string):Promise<ModeloCasa>{
+        const {id:_id, creadoEn:_creadoEn, fotos, ...datos} = await this.obtenerModeloAdmin(id);
+
+        const base = `${datos.nombreModelo.slice(0, 135)} (copia`;
+        let nombreModelo = `${base})`;
+        for(let n = 2; await this.modeloCasaRepository.findOne({where:{nombreModelo}}); n++){
+            nombreModelo = `${base} ${n})`;
+        }
+
+        const copia = await this.modeloCasaRepository.save(
+            Object.assign(new ModeloCasa(), datos, {nombreModelo, activo:false, estado:EstadoModelo.DISPONIBLE})
+        );
+        copia.fotos = await this.galeriaRepository.save(
+            (fotos ?? []).map(({urlImagen, orden}) => Object.assign(new GaleriaModeloCasa(), {urlImagen, orden, modeloCasa:{id:copia.id}}))
+        );
+        return copia;
+    }
+
     async despublicarModeloCasa(id:string):Promise<void>{
         const resultado = await this.modeloCasaRepository.update({id, activo:true}, {activo:false});
         if(!resultado.affected){

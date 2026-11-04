@@ -10,6 +10,13 @@ import { AuditoriaService } from "../auditoria/auditoria.service";
 
 const RETENCION_DIAS_POR_DEFECTO = 365;
 
+// Los datos vienen de un formulario público: un texto que empieza con =, @, +, - etc. Excel lo ejecutaría
+// como fórmula, así que se antepone ' (los celulares tipo "+56 9..." se dejan tal cual).
+export function celdaCsv(valor:string):string{
+    const seguro = /^[=@\t\r]|^[+-](?![\d\s]+$)/.test(valor) ? `'${valor}` : valor;
+    return /[";\r\n]/.test(seguro) ? `"${seguro.replace(/"/g, '""')}"` : seguro;
+}
+
 @Injectable()
 export class SolicitudService{
     constructor(
@@ -42,6 +49,27 @@ export class SolicitudService{
 
     mostrarSolicitudes(): Promise<Solicitud[]>{
         return this.solicitudRepository.find({relations:{modeloCasa:true},order:{creadoEn:'DESC'}})
+    }
+
+    // CSV con ";" y BOM para que Excel en español lo abra con columnas y tildes correctas.
+    // Exportar datos personales queda auditado con el usuario que lo pidió.
+    async exportarCsv(usuario:{id:string, correo:string, rol:string}):Promise<string>{
+        const solicitudes = await this.mostrarSolicitudes();
+        const filas = [
+            ['Fecha', 'Nombre', 'Apellido', 'Correo', 'Celular', 'Proyecto', 'Modelo', 'Mensaje', 'Estado'],
+            ...solicitudes.map((s) => [
+                s.creadoEn.toISOString(), s.nombre, s.apellido, s.correo, s.celular,
+                s.modeloCasa?.proyecto?.nombre ?? '', s.modeloCasa?.nombreModelo ?? '', s.mensaje ?? '',
+                s.contactado ? 'Contactado' : 'Pendiente',
+            ]),
+        ];
+
+        await this.auditoriaService.registrar({
+            accion:'EXPORTAR_SOLICITUDES', exito:true,
+            idUsuario:usuario.id, correo:usuario.correo, rol:usuario.rol,
+            detalle:{cantidad:solicitudes.length},
+        });
+        return '﻿' + filas.map((fila) => fila.map(celdaCsv).join(';')).join('\r\n');
     }
 
     async marcarContactado(id:string):Promise<Solicitud>{
