@@ -34,6 +34,14 @@ export class Proyecto{
     @Column({name:'entorno_actualizado_en', type:'timestamp', nullable:true, select:false})
     entornoActualizadoEn: Date | null;
 
+    // null = sin informar (proyectos creados antes de este campo)
+    @Column({type:'varchar', length:20, nullable:true})
+    etapa: string | null;
+
+    // 'YYYY-MM-DD'; el driver pg entrega las columnas date como string
+    @Column({name:'fecha_entrega', type:'date', nullable:true})
+    fechaEntrega: string | null;
+
     @Column({default:true})
     activo:boolean;
 

@@ -13,3 +13,11 @@ export enum EstadoModelo{
     RESERVADO='RESERVADO',
     VENDIDO='VENDIDO'
 }
+
+export enum TipoVivienda{
+    CASA='CASA',
+    DEPARTAMENTO='DEPARTAMENTO'
+}
+
+// Subsidios habitacionales del MINVU a los que el modelo es apto
+export const SUBSIDIOS = ['DS1', 'DS19'] as const;

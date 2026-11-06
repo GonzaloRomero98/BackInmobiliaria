@@ -29,6 +29,7 @@ Object.assign(process.env, {
   AWS_SECRET_ACCESS_KEY: 'secret',
   CORS_ORIGINS: 'http://localhost:3000,https://inmocap.cl',
   DB_SSL: 'false',
+  SWAGGER: 'true',
 });
 delete process.env.AWS_SESSION_TOKEN;
 
@@ -349,6 +350,19 @@ describe('API (e2e, BD simulada)', () => {
       await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ latitud: -95 }).expect(400);
     });
 
+    it('PATCH etapa y fecha de entrega; valores inválidos -> 400; null las borra', async () => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID, ciudad: { id: 1 } });
+      const res = await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken))
+        .send({ etapa: 'EN_VERDE', fechaEntrega: '2027-12-01' }).expect(200);
+      expect(res.body).toMatchObject({ etapa: 'EN_VERDE', fechaEntrega: '2027-12-01' });
+
+      await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ etapa: 'EN_OBRA' }).expect(400);
+      await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ fechaEntrega: '01-12-2027' }).expect(400);
+      await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ fechaEntrega: '2027-02-30' }).expect(400);
+      const borrado = await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ etapa: null, fechaEntrega: null }).expect(200);
+      expect(borrado.body).toMatchObject({ etapa: null, fechaEntrega: null });
+    });
+
     it('cambiar las coordenadas recalcula el entorno en segundo plano', async () => {
       repo(Proyecto).findOne.mockResolvedValue({ id: UUID, latitud: null, longitud: null, ciudad: { id: 1 } });
       await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ latitud: -35.4, longitud: -71.6 }).expect(200);
@@ -448,7 +462,7 @@ describe('API (e2e, BD simulada)', () => {
       await http().post('/api/modeloCasa').set(auth(adminToken)).send({ ...body, campoExtra: 'se descarta' }).expect(201);
 
       const guardado = repo(ModeloCasa).save.mock.calls[0][0];
-      expect(guardado.gastosComunes).toBe(false);
+      expect(guardado).toMatchObject({ tipoVivienda: 'CASA', gastosComunes: null, subsidios: [] });
       expect(guardado.estacionamientos).toBe(1);
       expect(guardado).not.toHaveProperty('campoExtra');
 
@@ -456,6 +470,29 @@ describe('API (e2e, BD simulada)', () => {
       expect(repo(Auditoria).save).toHaveBeenCalledWith(expect.objectContaining({
         accion: 'POST /api/modeloCasa', estado: 201, exito: true, idUsuario: 'admin-id', rol: 'ADMIN',
       }));
+    });
+
+    it('departamento sin terreno -> 201; casa sin terreno -> 400', async () => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
+      const { superficieTerreno: _t, ...sinTerreno } = body;
+      await http().post('/api/modeloCasa').set(auth(adminToken))
+        .send({ ...sinTerreno, tipoVivienda: 'DEPARTAMENTO', gastosComunes: 85000, subsidios: ['DS1', 'DS19'], bono: 'Bono pie 10%', planoUrl: 'https://x/plano.png' })
+        .expect(201);
+      expect(repo(ModeloCasa).save.mock.calls[0][0]).toMatchObject({ tipoVivienda: 'DEPARTAMENTO', superficieTerreno: null, gastosComunes: 85000, subsidios: ['DS1', 'DS19'] });
+      await http().post('/api/modeloCasa').set(auth(adminToken)).send(sinTerreno).expect(400);
+    });
+
+    it.each([
+      ['tipo de vivienda desconocido', { tipoVivienda: 'BODEGA' }],
+      ['gastos comunes negativos', { gastosComunes: -1 }],
+      ['gastos comunes con decimales', { gastosComunes: 1.5 }],
+      ['gastos comunes como boolean (formato antiguo)', { gastosComunes: true }],
+      ['subsidio desconocido', { subsidios: ['DS49'] }],
+      ['subsidio repetido', { subsidios: ['DS1', 'DS1'] }],
+      ['bono de más de 150 caracteres', { bono: 'a'.repeat(151) }],
+    ])('crear con %s -> 400', async (_caso, cambio) => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
+      await http().post('/api/modeloCasa').set(auth(adminToken)).send({ ...body, ...cambio }).expect(400);
     });
 
     it('nombre duplicado -> 409', async () => {

@@ -6,7 +6,7 @@ import { Proyecto } from '../proyecto/entities/proyecto.entity';
 import { Caracteristica } from '../caracteristicas/entities/caracteristica.entity';
 import { GaleriaModeloCasa } from './entities/galeriaModeloCasa.entity';
 import { CrearModeloCasaDto } from './dto/CrearModeloCasa.dto';
-import { EstadoModelo, Moneda, TipoOperacion } from './modelo-casa.enum';
+import { EstadoModelo, Moneda, TipoOperacion, TipoVivienda } from './modelo-casa.enum';
 
 const mockRepo = () => ({
   findOne: jest.fn(),
@@ -37,7 +37,6 @@ describe('ModeloCasaService', () => {
     superficieTerreno: 200,
     precio: 3500,
     moneda: Moneda.UF,
-    gastosComunes: undefined as unknown as boolean,
     modelo3dUrl: 'https://x/m.glb',
     imgPrincipal: 'https://x/i.jpg',
     caracteristicasID: [],
@@ -57,14 +56,14 @@ describe('ModeloCasaService', () => {
   });
 
   describe('crearModeloCasa', () => {
-    it('mapea el DTO a la entidad (estacionamiento -> estacionamientos, gastosComunes por defecto false)', async () => {
+    it('mapea el DTO a la entidad (estacionamiento -> estacionamientos, campos opcionales por defecto)', async () => {
       proyectoRepo.findOne.mockResolvedValue({ id: 'p1' });
       modeloRepo.findOne.mockResolvedValue(null);
 
       const creado = await service.crearModeloCasa(dto());
 
       expect(creado.estacionamientos).toBe(1);
-      expect(creado.gastosComunes).toBe(false);
+      expect(creado).toMatchObject({ tipoVivienda: 'CASA', gastosComunes: null, planoUrl: null, subsidios: [], bono: null });
       expect(creado.proyecto).toEqual({ id: 'p1' });
       expect(creado.caracteristicas).toEqual([]);
     });
@@ -112,6 +111,48 @@ describe('ModeloCasaService', () => {
 
     const borrador = await service.crearModeloCasa({ ...dto(), estado: EstadoModelo.RESERVADO, activo: false });
     expect(borrador).toMatchObject({ estado: 'RESERVADO', activo: false });
+  });
+
+  describe('tipo de vivienda y datos comerciales', () => {
+    beforeEach(() => {
+      proyectoRepo.findOne.mockResolvedValue({ id: 'p1' });
+      modeloRepo.findOne.mockResolvedValue(null);
+    });
+
+    it('un departamento se crea sin terreno', async () => {
+      const creado = await service.crearModeloCasa({ ...dto(), tipoVivienda: TipoVivienda.DEPARTAMENTO, superficieTerreno: undefined, gastosComunes: 85000 });
+      expect(creado).toMatchObject({ tipoVivienda: 'DEPARTAMENTO', superficieTerreno: null, gastosComunes: 85000 });
+    });
+
+    it('400 si una casa no trae terreno', async () => {
+      await expect(service.crearModeloCasa({ ...dto(), superficieTerreno: undefined })).rejects.toBeInstanceOf(BadRequestException);
+      expect(modeloRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('una casa en condominio puede tener gastos comunes', async () => {
+      expect((await service.crearModeloCasa({ ...dto(), gastosComunes: 40000 })).gastosComunes).toBe(40000);
+    });
+
+    it('guarda plano, subsidios y bono (bono vacío o con espacios -> null)', async () => {
+      const creado = await service.crearModeloCasa({ ...dto(), planoUrl: 'https://x/plano.png', subsidios: ['DS19'], bono: '  Bono pie 10%  ' });
+      expect(creado).toMatchObject({ planoUrl: 'https://x/plano.png', subsidios: ['DS19'], bono: 'Bono pie 10%' });
+      expect((await service.crearModeloCasa({ ...dto(), bono: '   ' })).bono).toBeNull();
+    });
+
+    it('editar: pasar un departamento sin terreno a casa -> 400; con terreno -> ok', async () => {
+      const depto = () => ({ id: 'm1', nombreModelo: 'D', tipoVivienda: 'DEPARTAMENTO', superficieTerreno: null, caracteristicas: [], proyecto: { id: 'p1' } });
+      modeloRepo.findOne.mockResolvedValue(depto());
+      await expect(service.actualizarModeloCasa('m1', { tipoVivienda: TipoVivienda.CASA })).rejects.toBeInstanceOf(BadRequestException);
+
+      modeloRepo.findOne.mockResolvedValue(depto());
+      const r = await service.actualizarModeloCasa('m1', { tipoVivienda: TipoVivienda.CASA, superficieTerreno: 150 });
+      expect(r).toMatchObject({ tipoVivienda: 'CASA', superficieTerreno: 150 });
+    });
+
+    it('editar: quitar el terreno a una casa -> 400', async () => {
+      modeloRepo.findOne.mockResolvedValue({ id: 'm1', nombreModelo: 'C', tipoVivienda: 'CASA', superficieTerreno: 200, caracteristicas: [] });
+      await expect(service.actualizarModeloCasa('m1', { superficieTerreno: null })).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 
   describe('actualizarModeloCasa', () => {

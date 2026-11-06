@@ -3,7 +3,7 @@ import { Proyecto } from "../../proyecto/entities/proyecto.entity";
 import { Caracteristica } from "../../caracteristicas/entities/caracteristica.entity";
 import { GaleriaModeloCasa } from "./galeriaModeloCasa.entity";
 import { decimalANumero } from "../../../database/transformadores";
-import { EstadoModelo } from "../modelo-casa.enum";
+import { EstadoModelo, TipoVivienda } from "../modelo-casa.enum";
 
 @Entity('modelo_casa')
 export class ModeloCasa{
@@ -31,8 +31,12 @@ export class ModeloCasa{
     @Column({name:'superficie_construida', type:'decimal', transformer:decimalANumero})
     superficieConstruida:number;
 
-     @Column({name:'superficie_terreno', type:'decimal', transformer:decimalANumero})
-    superficieTerreno:number;
+    @Column({name:'tipo_vivienda', type:'varchar', length:20, default:TipoVivienda.CASA})
+    tipoVivienda:string;
+
+    // Obligatoria solo en casas (un departamento no tiene terreno propio); se valida en el servicio
+    @Column({name:'superficie_terreno', type:'decimal', nullable:true, transformer:decimalANumero})
+    superficieTerreno:number | null;
 
     @Column({type:'decimal', precision:12, scale:4, transformer:decimalANumero})
     precio:number;
@@ -40,11 +44,21 @@ export class ModeloCasa{
     @Column({type:'varchar', length:3})
     moneda:string;
 
-    @Column({name:'gastos_comunes', type:'boolean'})
-    gastosComunes:boolean;
+    // Monto mensual en CLP; null = no aplica o no informado
+    @Column({name:'gastos_comunes', type:'int', nullable:true})
+    gastosComunes:number | null;
 
     @Column({name:'modelo_3d_url', type:'varchar', nullable:true})
     modelo3dUrl:string | null;
+
+    @Column({name:'plano_url', type:'varchar', nullable:true})
+    planoUrl:string | null;
+
+    @Column({type:'text', array:true, default:'{}'})
+    subsidios:string[];
+
+    @Column({type:'varchar', length:150, nullable:true})
+    bono:string | null;
 
     @Column({name:'img_principal', type:'varchar',nullable:false})
     imgPrincipal:string;

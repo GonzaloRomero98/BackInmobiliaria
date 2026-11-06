@@ -9,7 +9,7 @@ import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
 import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { FiltrosModeloCasaDto, OrdenModelo } from "./dto/filtrosModeloCasa.dto";
-import { EstadoModelo } from "./modelo-casa.enum";
+import { EstadoModelo, TipoVivienda } from "./modelo-casa.enum";
 
 const ORDEN: Record<OrdenModelo, FindOptionsOrder<ModeloCasa>> = {
     precio_asc: {precio:'ASC'},
@@ -53,15 +53,20 @@ export class ModeloCasaService{
             modeloCasa.estacionamientos = crearModeloCasaDto.estacionamiento;
             modeloCasa.mascotas = crearModeloCasaDto.mascotas;
             modeloCasa.superficieConstruida = crearModeloCasaDto.superficieConstruida;
-            modeloCasa.superficieTerreno = crearModeloCasaDto.superficieTerreno;
+            modeloCasa.tipoVivienda = crearModeloCasaDto.tipoVivienda ?? TipoVivienda.CASA;
+            modeloCasa.superficieTerreno = crearModeloCasaDto.superficieTerreno ?? null;
             modeloCasa.precio = crearModeloCasaDto.precio;
             modeloCasa.moneda = crearModeloCasaDto.moneda;
-            modeloCasa.gastosComunes = crearModeloCasaDto.gastosComunes ?? false;
+            modeloCasa.gastosComunes = crearModeloCasaDto.gastosComunes ?? null;
             modeloCasa.modelo3dUrl = crearModeloCasaDto.modelo3dUrl ?? null;
+            modeloCasa.planoUrl = crearModeloCasaDto.planoUrl ?? null;
+            modeloCasa.subsidios = crearModeloCasaDto.subsidios ?? [];
+            modeloCasa.bono = crearModeloCasaDto.bono?.trim() || null;
             modeloCasa.imgPrincipal = crearModeloCasaDto.imgPrincipal;
             modeloCasa.caracteristicas = await this.buscarCaracteristicas(crearModeloCasaDto.caracteristicasID);
             modeloCasa.estado = crearModeloCasaDto.estado ?? EstadoModelo.DISPONIBLE;
             modeloCasa.activo = crearModeloCasaDto.activo ?? true;
+        this.exigirTerrenoEnCasas(modeloCasa);
 
         const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:modeloCasa.nombreModelo}});
 
@@ -95,7 +100,16 @@ export class ModeloCasaService{
         }
 
         Object.assign(modelo, cambios);
+        if(cambios.bono !== undefined) modelo.bono = cambios.bono?.trim() || null;
+        // Se valida el resultado combinado: p. ej. pasar un departamento sin terreno a casa
+        this.exigirTerrenoEnCasas(modelo);
         return this.modeloCasaRepository.save(modelo);
+    }
+
+    private exigirTerrenoEnCasas(modelo:ModeloCasa){
+        if(modelo.tipoVivienda === TipoVivienda.CASA && modelo.superficieTerreno == null){
+            throw new BadRequestException('La superficie de terreno es obligatoria en una casa');
+        }
     }
 
     // La copia nace como borrador DISPONIBLE y reutiliza las mismas URLs de S3: no sube ni copia archivos,

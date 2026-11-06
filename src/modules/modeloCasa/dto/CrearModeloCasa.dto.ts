@@ -1,5 +1,5 @@
-import { IsArray, IsBoolean, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MaxLength, Min } from "class-validator";
-import { EstadoModelo, Moneda, TipoOperacion } from "../modelo-casa.enum";
+import { ArrayUnique, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MaxLength, Min } from "class-validator";
+import { EstadoModelo, Moneda, SUBSIDIOS, TipoOperacion, TipoVivienda } from "../modelo-casa.enum";
 
 export class CrearModeloCasaDto{
     @IsUUID()
@@ -33,9 +33,15 @@ export class CrearModeloCasaDto{
     @IsPositive()
     superficieConstruida:number;
 
+    @IsOptional()
+    @IsEnum(TipoVivienda)
+    tipoVivienda?:TipoVivienda;
+
+    // Opcional aquí porque depende del tipo: el servicio la exige en casas
+    @IsOptional()
     @IsNumber({maxDecimalPlaces:2})
     @IsPositive()
-    superficieTerreno:number;
+    superficieTerreno?:number | null;
 
     @IsNumber({maxDecimalPlaces:4})
     @IsPositive()
@@ -44,13 +50,30 @@ export class CrearModeloCasaDto{
     @IsEnum(Moneda)
     moneda:Moneda;
 
+    // Monto mensual en CLP
     @IsOptional()
-    @IsBoolean()
-    gastosComunes:boolean;
+    @IsInt()
+    @Min(0)
+    gastosComunes?:number | null;
 
     @IsOptional()
     @IsString()
     modelo3dUrl?:string | null;
+
+    @IsOptional()
+    @IsString()
+    planoUrl?:string | null;
+
+    @IsOptional()
+    @IsArray()
+    @ArrayUnique()
+    @IsIn(SUBSIDIOS, {each:true})
+    subsidios?:string[];
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(150)
+    bono?:string | null;
 
     @IsString()
     imgPrincipal:string;

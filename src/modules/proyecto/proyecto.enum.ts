@@ -1,0 +1,5 @@
+export enum EtapaProyecto{
+    EN_VERDE='EN_VERDE',
+    EN_BLANCO='EN_BLANCO',
+    ENTREGA_INMEDIATA='ENTREGA_INMEDIATA'
+}

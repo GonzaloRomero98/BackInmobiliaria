@@ -1,3 +1,4 @@
+import { EtapaProyecto } from './proyecto.enum';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ProyectoService } from './proyecto.service';
@@ -37,7 +38,9 @@ describe('ProyectoService', () => {
     const p = await service.crearProyecto({
       nombre: 'Proyecto', id_ciudad: 3, descripcion: 'desc', imagenPortada: 'https://x/p.jpg',
       direccion: 'Av. Alemania 100', latitud: -38.7359, longitud: -72.5904,
+      etapa: EtapaProyecto.EN_BLANCO, fechaEntrega: '2027-06-30',
     });
+    expect(p).toMatchObject({ etapa: 'EN_BLANCO', fechaEntrega: '2027-06-30' });
     expect(p.ciudad).toEqual({ id: 3, nombre: 'Temuco' });
     expect(p).toMatchObject({ direccion: 'Av. Alemania 100', latitud: -38.7359, longitud: -72.5904 });
   });
@@ -45,7 +48,7 @@ describe('ProyectoService', () => {
   it('descripción y ubicación son opcionales', async () => {
     ciudadRepo.findOne.mockResolvedValue({ id: 3 });
     const p = await service.crearProyecto({ nombre: 'P', id_ciudad: 3, imagenPortada: 'https://x/p.jpg' });
-    expect(p).toMatchObject({ descripcion: '', direccion: null, latitud: null, longitud: null });
+    expect(p).toMatchObject({ descripcion: '', direccion: null, latitud: null, longitud: null, etapa: null, fechaEntrega: null });
   });
 
   it('404 si la ciudad no existe', async () => {

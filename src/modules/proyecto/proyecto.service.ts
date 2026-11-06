@@ -32,6 +32,8 @@ export class ProyectoService{
             direccion: crearPoroyectoDto.direccion ?? null,
             latitud: crearPoroyectoDto.latitud ?? null,
             longitud: crearPoroyectoDto.longitud ?? null,
+            etapa: crearPoroyectoDto.etapa ?? null,
+            fechaEntrega: crearPoroyectoDto.fechaEntrega ?? null,
             ciudad
         });
         const guardado = await this.proyectoRepository.save(proyecto);

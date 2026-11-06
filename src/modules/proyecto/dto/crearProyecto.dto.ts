@@ -1,4 +1,5 @@
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Max, MaxLength, Min } from "class-validator";
+import { IsDateString, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Matches, Max, MaxLength, Min } from "class-validator";
+import { EtapaProyecto } from "../proyecto.enum";
 
 export class CrearProyectoDto{
     @IsString()
@@ -33,4 +34,13 @@ export class CrearProyectoDto{
     @Min(-180)
     @Max(180)
     longitud?:number;
+
+    @IsOptional()
+    @IsEnum(EtapaProyecto)
+    etapa?:EtapaProyecto | null;
+
+    @IsOptional()
+    @Matches(/^\d{4}-\d{2}-\d{2}$/, {message:'fechaEntrega debe tener formato AAAA-MM-DD'})
+    @IsDateString({strict:true})
+    fechaEntrega?:string | null;
 }
