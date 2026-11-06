@@ -215,4 +215,18 @@ export class ModeloCasaService{
 
         await this.galeriaRepository.remove(foto);
     }
+
+    // Exige la lista completa: un orden parcial dejaría posiciones repetidas con las fotos omitidas
+    async ordenarFotos(id:string, ids:string[]){
+        const fotos = await this.galeriaRepository.find({where:{modeloCasa:{id}}});
+        const porId = new Map(fotos.map((f) => [f.id, f]));
+        if(ids.length !== fotos.length || ids.some((fotoId) => !porId.has(fotoId))){
+            throw new BadRequestException('La lista debe contener exactamente las fotos del modelo');
+        }
+
+        // save de un arreglo corre en una sola transacción
+        const ordenadas = ids.map((fotoId, orden) => Object.assign(porId.get(fotoId)!, {orden}));
+        await this.galeriaRepository.save(ordenadas);
+        return ordenadas.map(({id:fotoId, urlImagen, orden}) => ({id:fotoId, urlImagen, orden}));
+    }
 }

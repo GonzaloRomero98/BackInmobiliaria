@@ -351,5 +351,31 @@ describe('ModeloCasaService', () => {
       galeriaRepo.findOne.mockResolvedValue(null);
       await expect(service.eliminarFoto('m1', 'f1')).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    describe('ordenarFotos', () => {
+      const fotos = () => [
+        { id: 'f1', urlImagen: 'https://x/1.jpg', orden: 0 },
+        { id: 'f2', urlImagen: 'https://x/2.jpg', orden: 1 },
+        { id: 'f3', urlImagen: 'https://x/3.jpg', orden: 2 },
+      ];
+
+      it('asigna el orden según la posición en la lista, en un solo save', async () => {
+        galeriaRepo.find.mockResolvedValue(fotos());
+        const res = await service.ordenarFotos('m1', ['f3', 'f1', 'f2']);
+        expect(galeriaRepo.find).toHaveBeenCalledWith({ where: { modeloCasa: { id: 'm1' } } });
+        expect(galeriaRepo.save).toHaveBeenCalledTimes(1);
+        expect(res.map((f) => [f.id, f.orden])).toEqual([['f3', 0], ['f1', 1], ['f2', 2]]);
+      });
+
+      it.each([
+        ['falta una foto', ['f1', 'f2']],
+        ['sobra una foto ajena', ['f1', 'f2', 'f3', 'otra']],
+        ['cambia una por otra ajena', ['f1', 'f2', 'otra']],
+      ])('400 si %s', async (_caso, ids) => {
+        galeriaRepo.find.mockResolvedValue(fotos());
+        await expect(service.ordenarFotos('m1', ids)).rejects.toBeInstanceOf(BadRequestException);
+        expect(galeriaRepo.save).not.toHaveBeenCalled();
+      });
+    });
   });
 });

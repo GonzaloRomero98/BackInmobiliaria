@@ -1,5 +1,5 @@
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { ModeloCasaService } from "./modelo-casa.service";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
 import { Roles } from "../auth/decorator/rol.decorator";
@@ -10,6 +10,7 @@ import { FiltrosModeloCasaDto } from "./dto/filtrosModeloCasa.dto";
 import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { DuplicarModeloCasaDto } from "./dto/duplicarModeloCasa.dto";
+import { OrdenarFotosDto } from "./dto/ordenarFotos.dto";
 
 @ApiTags('modelos de casa')
 @ApiBearerAuth()
@@ -89,6 +90,13 @@ export class ModeloCasaController{
     @Roles(RolUsuario.ADMIN)
     agregarFoto(@Param('id', ParseUUIDPipe) id:string, @Body() agregarFotoDto:AgregarFotoDto){
         return this.modeloCasaService.agregarFoto(id, agregarFotoDto);
+    }
+
+    @Put(':id/fotos/orden')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    ordenarFotos(@Param('id', ParseUUIDPipe) id:string, @Body() dto:OrdenarFotosDto){
+        return this.modeloCasaService.ordenarFotos(id, dto.ids);
     }
 
     @Delete(':id/fotos/:foto_id')

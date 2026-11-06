@@ -14,6 +14,7 @@ import { Proyecto } from '../src/modules/proyecto/entities/proyecto.entity';
 import { Ciudad } from '../src/modules/ubicacion/entities/ciudad.entity';
 import { Region } from '../src/modules/ubicacion/entities/region.entity';
 import { ModeloCasa } from '../src/modules/modeloCasa/entities/modeloCasa.entity';
+import { GaleriaModeloCasa } from '../src/modules/modeloCasa/entities/galeriaModeloCasa.entity';
 import { Solicitud } from '../src/modules/solicitud/entities/solicitud.entity';
 import { Auditoria } from '../src/modules/auditoria/entities/auditoria.entity';
 import { NormativaProyecto } from '../src/modules/proyecto/entities/normativaProyecto.entity';
@@ -576,6 +577,21 @@ describe('API (e2e, BD simulada)', () => {
       repo(ModeloCasa).update.mockResolvedValue({ affected: 0 });
       await http().delete(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).expect(404);
       await http().delete(`/api/modeloCasa/${UUID}`).set(auth(secretarioToken)).expect(403);
+    });
+
+    it('PUT /:id/fotos/orden reordena con ADMIN; ids inválidos -> 400; SECRETARIO -> 403', async () => {
+      const url = `/api/modeloCasa/${UUID}/fotos/orden`;
+      const F1 = '22222222-2222-4222-8222-222222222222', F2 = '33333333-3333-4333-8333-333333333333';
+      repo(GaleriaModeloCasa).find.mockResolvedValue([
+        { id: F1, urlImagen: 'https://x/1.jpg', orden: 0 },
+        { id: F2, urlImagen: 'https://x/2.jpg', orden: 1 },
+      ]);
+      const res = await http().put(url).set(auth(adminToken)).send({ ids: [F2, F1] }).expect(200);
+      expect(res.body.map((f: { id: string; orden: number }) => [f.id, f.orden])).toEqual([[F2, 0], [F1, 1]]);
+
+      await http().put(url).set(auth(adminToken)).send({ ids: ['no-es-uuid'] }).expect(400);
+      await http().put(url).set(auth(adminToken)).send({ ids: [F1, F1] }).expect(400);
+      await http().put(url).set(auth(secretarioToken)).send({ ids: [F2, F1] }).expect(403);
     });
 
     it('SECRETARIO no puede crear -> 403 y el rechazo queda auditado', async () => {
