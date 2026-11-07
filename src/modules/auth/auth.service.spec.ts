@@ -1,17 +1,17 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { AuthService } from './auth.service';
+import { AuthService, BLOQUEO_MS, MAX_INTENTOS_FALLIDOS } from './auth.service';
 import { UsuarioService } from '../usuario/usuario.service';
 import { RolUsuario } from '../rol/rol.enum';
 
 describe('AuthService', () => {
   const jwtService = new JwtService({ secret: 'test-secret' });
-  let usuarioService: { crearUsuario: jest.Mock; usuarioPorCorreo: jest.Mock };
+  let usuarioService: { usuarioPorCorreo: jest.Mock };
   let authService: AuthService;
 
   beforeEach(() => {
-    usuarioService = { crearUsuario: jest.fn(), usuarioPorCorreo: jest.fn() };
+    usuarioService = { usuarioPorCorreo: jest.fn() };
     authService = new AuthService(usuarioService as unknown as UsuarioService, jwtService);
   });
 
@@ -62,16 +62,52 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it('registrar crea el usuario y devuelve su token', async () => {
-    usuarioService.crearUsuario.mockResolvedValue({
-      id: 'u2', correo: 'b@b.cl', rol: { nombre: 'SECRETARIO' },
+  describe('bloqueo por cuenta', () => {
+    let ahora: number;
+    const fallar = (correo = 'a@a.cl') =>
+      expect(authService.loginUsuario({ correo, contrasena: 'mala' })).rejects.toBeInstanceOf(UnauthorizedException);
+    const entrar = (correo = 'a@a.cl') => authService.loginUsuario({ correo, contrasena: 'secreta123' });
+
+    beforeEach(async () => {
+      ahora = 1_000_000;
+      jest.spyOn(Date, 'now').mockImplementation(() => ahora);
+      const hash = await bcrypt.hash('secreta123', 4);
+      usuarioService.usuarioPorCorreo.mockResolvedValue({
+        id: 'u1', correo: 'a@a.cl', contrasena: hash, activo: true, rol: { nombre: 'ADMIN' },
+      });
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    it('tras 5 fallos bloquea la cuenta (429) aunque la contraseña sea correcta', async () => {
+      for (let i = 0; i < MAX_INTENTOS_FALLIDOS; i++) await fallar();
+      await expect(entrar()).rejects.toMatchObject({ status: 429 });
     });
 
-    const res = await authService.registrarUsuario({
-      correo: 'b@b.cl', contrasena: '12345678', nombre: 'B', rol: RolUsuario.SECRETARIO,
+    it('el bloqueo no distingue mayúsculas en el correo', async () => {
+      for (let i = 0; i < MAX_INTENTOS_FALLIDOS; i++) await fallar('A@A.cl');
+      await expect(entrar('a@a.cl')).rejects.toMatchObject({ status: 429 });
     });
 
-    expect(res.usuario).toEqual({ id: 'u2', correo: 'b@b.cl', rol: 'SECRETARIO' });
-    expect(jwtService.verify(res.access_token).sub).toBe('u2');
+    it('el bloqueo vence 15 minutos después del último fallo', async () => {
+      for (let i = 0; i < MAX_INTENTOS_FALLIDOS; i++) await fallar();
+      ahora += BLOQUEO_MS - 1;
+      await expect(entrar()).rejects.toMatchObject({ status: 429 });
+      ahora += 1;
+      await expect(entrar()).resolves.toHaveProperty('access_token');
+    });
+
+    it('un login correcto reinicia el contador', async () => {
+      for (let i = 0; i < MAX_INTENTOS_FALLIDOS - 1; i++) await fallar();
+      await entrar();
+      for (let i = 0; i < MAX_INTENTOS_FALLIDOS - 1; i++) await fallar();
+      await expect(entrar()).resolves.toHaveProperty('access_token');
+    });
+
+    it('también cuenta correos inexistentes (no revela qué cuentas existen)', async () => {
+      usuarioService.usuarioPorCorreo.mockResolvedValue(null);
+      for (let i = 0; i < MAX_INTENTOS_FALLIDOS; i++) await fallar('nadie@x.cl');
+      await expect(entrar('nadie@x.cl')).rejects.toMatchObject({ status: 429 });
+    });
   });
+
 });

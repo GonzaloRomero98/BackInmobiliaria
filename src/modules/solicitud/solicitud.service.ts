@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -9,6 +9,7 @@ import { CrearSolicitudDto } from "./dto/crearSolicitud.dto";
 import { AuditoriaService } from "../auditoria/auditoria.service";
 
 const RETENCION_DIAS_POR_DEFECTO = 365;
+const VISITA_DIAS_MAXIMOS = 60;
 
 // Los datos vienen de un formulario público: un texto que empieza con =, @, +, - etc. Excel lo ejecutaría
 // como fórmula, así que se antepone ' (los celulares tipo "+56 9..." se dejan tal cual).
@@ -34,6 +35,7 @@ export class SolicitudService{
         if(!modeloCasa){
             throw new NotFoundException('El modelo de la casa ingresado no existe');
         }
+        const visitaPreferida = this.validarVisita(crearSolicitudDto.visitaPreferida, modeloCasa);
 
         const solicitud = new Solicitud();
             solicitud.nombre = crearSolicitudDto.nombre;
@@ -43,12 +45,36 @@ export class SolicitudService{
             solicitud.mensaje = crearSolicitudDto.mensaje ?? null;
             solicitud.consentimientoEn = new Date();
             solicitud.modeloCasa = modeloCasa;
+            solicitud.visitaPreferida = visitaPreferida;
 
         return this.solicitudRepository.save(solicitud);
     }
 
+    // Solo si el proyecto tiene sala de ventas, y entre ahora y los próximos VISITA_DIAS_MAXIMOS días
+    private validarVisita(visita:string | undefined, modeloCasa:ModeloCasa):Date | null{
+        if(!visita) return null;
+        if(!modeloCasa.proyecto?.salaDireccion){
+            throw new BadRequestException('El proyecto no tiene sala de ventas para agendar una visita');
+        }
+        const fecha = new Date(visita);
+        const ahora = Date.now();
+        if(fecha.getTime() <= ahora || fecha.getTime() > ahora + VISITA_DIAS_MAXIMOS * 24 * 60 * 60 * 1000){
+            throw new BadRequestException(`La visita debe ser una fecha futura dentro de los próximos ${VISITA_DIAS_MAXIMOS} días`);
+        }
+        return fecha;
+    }
+
     mostrarSolicitudes(): Promise<Solicitud[]>{
         return this.solicitudRepository.find({relations:{modeloCasa:true},order:{creadoEn:'DESC'}})
+    }
+
+    async obtenerSolicitud(id:string):Promise<Solicitud>{
+        // Las relaciones eager no se encadenan desde una relación pedida explícitamente: sin esto el proyecto llega sin ciudad
+        const solicitud = await this.solicitudRepository.findOne({where:{id}, relations:{modeloCasa:{proyecto:{ciudad:{region:true}}}}});
+        if(!solicitud){
+            throw new NotFoundException('Solicitud no encontrada');
+        }
+        return solicitud;
     }
 
     // CSV con ";" y BOM para que Excel en español lo abra con columnas y tildes correctas.
@@ -56,11 +82,12 @@ export class SolicitudService{
     async exportarCsv(usuario:{id:string, correo:string, rol:string}):Promise<string>{
         const solicitudes = await this.mostrarSolicitudes();
         const filas = [
-            ['Fecha', 'Nombre', 'Apellido', 'Correo', 'Celular', 'Proyecto', 'Modelo', 'Mensaje', 'Estado'],
+            ['Fecha', 'Nombre', 'Apellido', 'Correo', 'Celular', 'Proyecto', 'Modelo', 'Mensaje', 'Estado', 'Visita preferida'],
             ...solicitudes.map((s) => [
                 s.creadoEn.toISOString(), s.nombre, s.apellido, s.correo, s.celular,
                 s.modeloCasa?.proyecto?.nombre ?? '', s.modeloCasa?.nombreModelo ?? '', s.mensaje ?? '',
                 s.contactado ? 'Contactado' : 'Pendiente',
+                s.visitaPreferida?.toISOString() ?? '',
             ]),
         ];
 

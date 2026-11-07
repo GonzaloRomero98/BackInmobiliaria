@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FindOperator, Repository } from 'typeorm';
 import { celdaCsv, SolicitudService } from './solicitud.service';
@@ -61,6 +61,37 @@ describe('SolicitudService', () => {
     });
   });
 
+  describe('visita preferida', () => {
+    const conSala = { id: 'm1', proyecto: { salaDireccion: '1 Sur 100, Talca' } };
+    const enDias = (d: number) => new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
+
+    it('sin visita se guarda null', async () => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      expect((await service.crearSolicitud(dto)).visitaPreferida).toBeNull();
+    });
+
+    it('guarda una fecha futura dentro de 60 días si el proyecto tiene sala', async () => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      const visita = enDias(3);
+      const s = await service.crearSolicitud({ ...dto, visitaPreferida: visita });
+      expect(s.visitaPreferida).toEqual(new Date(visita));
+    });
+
+    it.each([
+      ['pasada', -1],
+      ['más allá de 60 días', 61],
+    ])('400 con una fecha %s', async (_caso, dias) => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      await expect(service.crearSolicitud({ ...dto, visitaPreferida: enDias(dias) })).rejects.toBeInstanceOf(BadRequestException);
+      expect(solicitudRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('400 si el proyecto no tiene sala de ventas', async () => {
+      modeloRepo.findOne.mockResolvedValue({ id: 'm1', proyecto: { salaDireccion: null } });
+      await expect(service.crearSolicitud({ ...dto, visitaPreferida: enDias(3) })).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
   it('404 si el modelo de casa no existe', async () => {
     modeloRepo.findOne.mockResolvedValue(null);
     await expect(service.crearSolicitud(dto)).rejects.toBeInstanceOf(NotFoundException);
@@ -98,18 +129,23 @@ describe('SolicitudService', () => {
     it('genera CSV con BOM y ";", escapa comillas y saltos, y audita la exportación', async () => {
       solicitudRepo.find.mockResolvedValue([{
         creadoEn: new Date('2026-10-01T12:00:00Z'), nombre: 'Ana', apellido: 'Díaz', correo: 'a@b.cl', celular: '+56 9 1111 1111',
-        mensaje: 'Hola; "quiero"\nvisitar', contactado: false,
+        mensaje: 'Hola; "quiero"\nvisitar', contactado: false, visitaPreferida: null,
         modeloCasa: { nombreModelo: 'Casa A', proyecto: { nombre: 'Los Robles' } },
+      }, {
+        creadoEn: new Date('2026-10-02T12:00:00Z'), nombre: 'Luis', apellido: 'Soto', correo: 'l@s.cl', celular: '+56922222222',
+        mensaje: null, contactado: true, visitaPreferida: new Date('2026-10-10T18:30:00Z'),
+        modeloCasa: { nombreModelo: 'Casa B', proyecto: { nombre: 'Los Robles' } },
       }]);
 
       const csv = await service.exportarCsv(usuario);
 
-      expect(csv.startsWith('﻿Fecha;Nombre;')).toBe(true);
+      expect(csv.split('\r\n')[0]).toBe('﻿Fecha;Nombre;Apellido;Correo;Celular;Proyecto;Modelo;Mensaje;Estado;Visita preferida');
       expect(csv.split('\r\n')[1]).toBe(
-        '2026-10-01T12:00:00.000Z;Ana;Díaz;a@b.cl;+56 9 1111 1111;Los Robles;Casa A;"Hola; ""quiero""\nvisitar";Pendiente',
+        '2026-10-01T12:00:00.000Z;Ana;Díaz;a@b.cl;+56 9 1111 1111;Los Robles;Casa A;"Hola; ""quiero""\nvisitar";Pendiente;',
       );
+      expect(csv.split('\r\n')[2]).toBe('2026-10-02T12:00:00.000Z;Luis;Soto;l@s.cl;+56922222222;Los Robles;Casa B;;Contactado;2026-10-10T18:30:00.000Z');
       expect(auditoria.registrar).toHaveBeenCalledWith({
-        accion: 'EXPORTAR_SOLICITUDES', exito: true, idUsuario: 'u1', correo: 'a@x.cl', rol: 'SECRETARIO', detalle: { cantidad: 1 },
+        accion: 'EXPORTAR_SOLICITUDES', exito: true, idUsuario: 'u1', correo: 'a@x.cl', rol: 'SECRETARIO', detalle: { cantidad: 2 },
       });
     });
 

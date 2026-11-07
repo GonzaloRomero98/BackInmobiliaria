@@ -1,4 +1,4 @@
-import { Equals, IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
+import { Equals, IsEmail, IsISO8601, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class CrearSolicitudDto{
     @IsString()
@@ -25,6 +25,11 @@ export class CrearSolicitudDto{
     
     @IsUUID()
     id_modelo_casa:string;
+
+    // ISO 8601 con zona horaria (el navegador la envía en UTC); el servicio valida el rango
+    @IsOptional()
+    @IsISO8601({strict:true})
+    visitaPreferida?:string;
 
     @Equals(true, {message:'Debe aceptar la política de privacidad'})
     aceptaPrivacidad:boolean;

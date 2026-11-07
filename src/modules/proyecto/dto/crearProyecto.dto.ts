@@ -43,4 +43,32 @@ export class CrearProyectoDto{
     @Matches(/^\d{4}-\d{2}-\d{2}$/, {message:'fechaEntrega debe tener formato AAAA-MM-DD'})
     @IsDateString({strict:true})
     fechaEntrega?:string | null;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    salaDireccion?:string | null;
+
+    // Texto libre, p. ej. "Lun a sáb 10:00 a 18:00"
+    @IsOptional()
+    @IsString()
+    @MaxLength(150)
+    salaHorario?:string | null;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(20)
+    salaTelefono?:string | null;
+
+    @IsOptional()
+    @IsNumber({maxDecimalPlaces:6})
+    @Min(-90)
+    @Max(90)
+    salaLatitud?:number | null;
+
+    @IsOptional()
+    @IsNumber({maxDecimalPlaces:6})
+    @Min(-180)
+    @Max(180)
+    salaLongitud?:number | null;
 }

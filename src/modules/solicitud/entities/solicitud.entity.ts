@@ -27,6 +27,10 @@ export class Solicitud{
     @Column({name:'consentimiento_en', type:'timestamp', nullable:true})
     consentimientoEn: Date | null;
 
+    // Fecha y hora en que la persona quiere visitar la sala de ventas (opcional)
+    @Column({name:'visita_preferida', type:'timestamptz', nullable:true})
+    visitaPreferida: Date | null;
+
     @CreateDateColumn({name:'creado_en'})
     creadoEn: Date;
 

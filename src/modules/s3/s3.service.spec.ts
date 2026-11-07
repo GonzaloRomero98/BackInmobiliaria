@@ -50,6 +50,33 @@ describe('S3Service', () => {
     await expect(service.obtenerUrl('model/gltf-binary', 50 * 1024 * 1024, 'modelos3D')).resolves.toBeDefined();
   });
 
+  it('perfiles: solo imágenes de hasta 2 MB', async () => {
+    await expect(service.obtenerUrl('image/webp', 2 * 1024 * 1024, 'perfiles')).resolves.toBeDefined();
+    await expect(service.obtenerUrl('image/webp', 2 * 1024 * 1024 + 1, 'perfiles')).rejects.toBeInstanceOf(PayloadTooLargeException);
+    await expect(service.obtenerUrl('model/gltf-binary', 10, 'perfiles')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  describe('keyDeUrl', () => {
+    const base = 'https://bucket-test.s3.us-east-1.amazonaws.com/';
+    const key = 'perfiles/0f8fad5b-d9cb-469f-a165-70867728950e.jpg';
+
+    it('devuelve la key de una URL generada por el propio servicio', async () => {
+      const { publicUrl, key: generada } = await service.obtenerUrl('image/png', 10, 'perfiles');
+      expect(service.keyDeUrl(publicUrl, 'perfiles')).toBe(generada);
+    });
+
+    it.each([
+      ['otra carpeta', `${base}proyectos/0f8fad5b-d9cb-469f-a165-70867728950e.jpg`],
+      ['otro bucket', `https://otro.s3.us-east-1.amazonaws.com/${key}`],
+      ['dominio externo', `https://evil.com/${key}`],
+      ['salto de carpeta', `${base}perfiles/../proyectos/0f8fad5b-d9cb-469f-a165-70867728950e.jpg`],
+      ['nombre no generado', `${base}perfiles/foto.jpg`],
+      ['con query', `${base}${key}?x=1`],
+    ])('rechaza %s', (_caso, url) => {
+      expect(service.keyDeUrl(url, 'perfiles')).toBeNull();
+    });
+  });
+
   it('sin claves de acceso usa la cadena de credenciales de AWS (rol IAM)', () => {
     expect(() => new S3Service(new ConfigService({ AWS_S3_BUCKET: 'b', AWS_REGION: 'us-east-1' }))).not.toThrow();
   });

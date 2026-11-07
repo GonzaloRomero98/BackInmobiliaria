@@ -50,9 +50,21 @@ export class S3Service {
             signableHeaders: new Set(['content-type', 'content-length']),
         });
 
-        const publicUrl = `https://${this.awsBucketname}.s3.${this.awsRegion}.amazonaws.com/${key}`;
+        const publicUrl = `${this.urlBase()}${key}`;
 
         return{uploadUrl, publicUrl, key, contentType}
+    }
+
+    // Devuelve la key si la URL es un archivo subido por obtenerUrl a `carpeta` de este bucket; si no, null
+    keyDeUrl(url:string, carpeta:CarpetaS3):string | null{
+        const base = this.urlBase();
+        if(!url.startsWith(base)) return null;
+        const key = url.slice(base.length);
+        return new RegExp(`^${carpeta}/[0-9a-f-]{36}\\.[a-z0-9]+$`).test(key) ? key : null;
+    }
+
+    private urlBase():string{
+        return `https://${this.awsBucketname}.s3.${this.awsRegion}.amazonaws.com/`;
     }
 
     async eliminarArchivo(key:string):Promise<void>{

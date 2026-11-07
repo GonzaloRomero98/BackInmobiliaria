@@ -40,6 +40,16 @@ export class SolicitudController{
         return this.solicitudService.exportarCsv(req.user);
     }
 
+    // Para la cotización: trae el modelo aunque sea borrador o su proyecto esté despublicado.
+    // Va después de 'exportar' para que esa ruta no caiga en :id
+    @Get(':id')
+    @ApiBearerAuth()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
+    obtenerSolicitud(@Param('id',ParseUUIDPipe) id:string){
+        return this.solicitudService.obtenerSolicitud(id);
+    }
+
     @Patch(':id/contactado')
     @ApiBearerAuth()
     @UseGuards(JwtAuthGuard, RolesGuard)

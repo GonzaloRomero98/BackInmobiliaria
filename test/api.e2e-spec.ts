@@ -210,11 +210,21 @@ describe('API (e2e, BD simulada)', () => {
       await http().post('/api/auth/login').send({ correo: 'x@x.cl', contrasena: 'secreta123' }).expect(401);
     });
 
-    it('login: el 6º intento en un minuto -> 429', async () => {
+    it('login: el 6º intento en un minuto desde la misma IP -> 429', async () => {
+      // Un correo distinto en cada intento: así salta el límite por IP y no el bloqueo por cuenta
       for (let i = 0; i < 5; i++) {
-        await http().post('/api/auth/login').send({ correo: 'a@a.cl', contrasena: 'x' }).expect(401);
+        await http().post('/api/auth/login').send({ correo: `ip${i}@a.cl`, contrasena: 'x' }).expect(401);
       }
-      await http().post('/api/auth/login').send({ correo: 'a@a.cl', contrasena: 'x' }).expect(429);
+      await http().post('/api/auth/login').send({ correo: 'ip5@a.cl', contrasena: 'x' }).expect(429);
+    });
+
+    it('login: 5 fallos sobre la misma cuenta la bloquean aunque cambie la IP -> 429', async () => {
+      for (let i = 0; i < 5; i++) {
+        rateLimit = new ThrottlerStorageService(); // simula una IP nueva en cada intento
+        await http().post('/api/auth/login').send({ correo: 'bloqueo@a.cl', contrasena: 'x' }).expect(401);
+      }
+      rateLimit = new ThrottlerStorageService();
+      await http().post('/api/auth/login').send({ correo: 'bloqueo@a.cl', contrasena: 'x' }).expect(429);
     });
 
     it('login correcto -> token utilizable en rutas protegidas', async () => {
@@ -239,24 +249,15 @@ describe('API (e2e, BD simulada)', () => {
 
     const nuevoUsuario = { correo: 'n@x.cl', contrasena: 'Inmocap2026', nombre: 'N', rol: 'ADMIN' };
 
-    it('registrar sin token -> 401', () =>
-      http().post('/api/auth/registrar').send(nuevoUsuario).expect(401));
+    // Eliminada: devolvía al ADMIN un token del usuario creado (podía actuar en su nombre). Se usa POST /usuarios.
+    it('POST /auth/registrar ya no existe -> 404', () =>
+      http().post('/api/auth/registrar').set(auth(adminToken)).send(nuevoUsuario).expect(404));
 
-    it('registrar con token de SECRETARIO -> 403', () =>
-      http().post('/api/auth/registrar').set(auth(secretarioToken)).send(nuevoUsuario).expect(403));
+    it('crear usuario sin token -> 401', () =>
+      http().post('/api/usuarios').send(nuevoUsuario).expect(401));
 
-    it('registrar con contraseña débil -> 400', () =>
-      http()
-        .post('/api/auth/registrar')
-        .set(auth(adminToken))
-        .send({ ...nuevoUsuario, contrasena: '12345678' })
-        .expect(400));
-
-    it('registrar con token de ADMIN -> 201', async () => {
-      repo(Rol).findOne.mockResolvedValue({ id: 1, nombre: 'ADMIN' });
-      const res = await http().post('/api/auth/registrar').set(auth(adminToken)).send(nuevoUsuario).expect(201);
-      expect(res.body.usuario.rol).toBe('ADMIN');
-    });
+    it('crear usuario con token de SECRETARIO -> 403', () =>
+      http().post('/api/usuarios').set(auth(secretarioToken)).send(nuevoUsuario).expect(403));
 
     it('token con firma inválida -> 401', () =>
       http().post('/api/proyectos').set(auth(`${adminToken.slice(0, -2)}xx`)).send({}).expect(401));
@@ -266,7 +267,7 @@ describe('API (e2e, BD simulada)', () => {
 
     it('si a un usuario le quitan el rol ADMIN, su token deja de servir para rutas ADMIN', async () => {
       repo(Usuario).findOne.mockResolvedValue({ ...usuarios['admin-id'], rol: { id: 2, nombre: 'SECRETARIO' } });
-      await http().post('/api/auth/registrar').set(auth(adminToken)).send(nuevoUsuario).expect(403);
+      await http().post('/api/usuarios').set(auth(adminToken)).send(nuevoUsuario).expect(403);
     });
   });
 
@@ -361,6 +362,17 @@ describe('API (e2e, BD simulada)', () => {
       await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ fechaEntrega: '2027-02-30' }).expect(400);
       const borrado = await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ etapa: null, fechaEntrega: null }).expect(200);
       expect(borrado.body).toMatchObject({ etapa: null, fechaEntrega: null });
+    });
+
+    it('PATCH sala de ventas con ADMIN -> 200; coordenadas fuera de rango o teléfono largo -> 400', async () => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID, ciudad: { id: 1 } });
+      const sala = { salaDireccion: '1 Sur 100, Talca', salaHorario: 'Lun a sáb 10:00 a 18:00', salaTelefono: '+56712345678', salaLatitud: -35.42, salaLongitud: -71.66 };
+      const res = await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send(sala).expect(200);
+      expect(res.body).toMatchObject(sala);
+      expect(entornoMock.calcular).not.toHaveBeenCalled(); // la sala no cambia el entorno del proyecto
+
+      await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ salaLatitud: -95 }).expect(400);
+      await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ salaTelefono: '1'.repeat(21) }).expect(400);
     });
 
     it('cambiar las coordenadas recalcula el entorno en segundo plano', async () => {
@@ -676,6 +688,29 @@ describe('API (e2e, BD simulada)', () => {
       await http().patch(`/api/usuarios/${uid}`).set(auth(secretarioToken)).send({ activo: false }).expect(403);
     });
 
+    it('GET me: devuelve el propio perfil sin contraseña; sin token -> 401', async () => {
+      repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], nombre: 'Sec', contrasena: 'hash' }));
+      const res = await http().get('/api/usuarios/me').set(auth(secretarioToken)).expect(200);
+      expect(res.body).toMatchObject({ id: 'sec-id', correo: 'sec@x.cl', nombre: 'Sec' });
+      expect(res.body).not.toHaveProperty('contrasena');
+      await http().get('/api/usuarios/me').expect(401);
+    });
+
+    it('PATCH me: el SECRETARIO cambia su nombre y su foto; el correo no se puede cambiar', async () => {
+      const foto = 'https://bucket-test.s3.us-east-1.amazonaws.com/perfiles/0f8fad5b-d9cb-469f-a165-70867728950e.png';
+      const res = await http().patch('/api/usuarios/me').set(auth(secretarioToken))
+        .send({ nombre: '  Secretaria Uno ', fotoUrl: foto, correo: 'otro@x.cl' }).expect(200);
+      expect(res.body).toMatchObject({ id: 'sec-id', nombre: 'Secretaria Uno', fotoUrl: foto, correo: 'sec@x.cl' });
+      expect(repo(Usuario).save).toHaveBeenCalledWith(expect.objectContaining({ id: 'sec-id', correo: 'sec@x.cl' }));
+    });
+
+    it('PATCH me: nombre vacío o foto externa -> 400', async () => {
+      await http().patch('/api/usuarios/me').set(auth(secretarioToken)).send({ nombre: '   ' }).expect(400);
+      await http().patch('/api/usuarios/me').set(auth(secretarioToken)).send({ nombre: null }).expect(400);
+      await http().patch('/api/usuarios/me').set(auth(secretarioToken)).send({ fotoUrl: 'https://evil.com/x.png' }).expect(400);
+      expect(repo(Usuario).save).not.toHaveBeenCalled();
+    });
+
     it('PATCH me/contrasena: el SECRETARIO cambia la suya con la actual correcta', async () => {
       const hash = await bcrypt.hash('Actual12345', 4);
       repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], contrasena: hash }));
@@ -683,6 +718,21 @@ describe('API (e2e, BD simulada)', () => {
       await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Actual12345', nueva: 'debil' }).expect(400);
       await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Actual12345', nueva: 'Nueva123456' }).expect(200);
       expect(repo(Usuario).save).toHaveBeenCalledWith(expect.objectContaining({ id: 'sec-id' }));
+    });
+
+    it('PATCH me/contrasena devuelve un token nuevo y los tokens anteriores al cambio dejan de servir', async () => {
+      const hash = await bcrypt.hash('Actual12345', 4);
+      repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], contrasena: hash }));
+      const res = await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken))
+        .send({ actual: 'Actual12345', nueva: 'Nueva123456' }).expect(200);
+      const cambiadaEn: Date = repo(Usuario).save.mock.calls.at(-1)![0].contrasenaCambiadaEn;
+      expect(cambiadaEn).toBeInstanceOf(Date);
+
+      // Desde ahora la BD devuelve la fecha del cambio
+      repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], contrasenaCambiadaEn: cambiadaEn }));
+      const anterior = app.get(JwtService).sign({ sub: 'sec-id', correo: 'sec@x.cl', rol: 'SECRETARIO', iat: Math.floor(cambiadaEn.getTime() / 1000) - 60 });
+      await http().get('/api/solicitudes').set(auth(anterior)).expect(401);
+      await http().get('/api/solicitudes').set(auth(res.body.access_token)).expect(200);
     });
   });
 
@@ -709,6 +759,17 @@ describe('API (e2e, BD simulada)', () => {
       expect(res.body.mensaje).toBe('Me interesa');
       expect(res.body).not.toHaveProperty('mensjae');
       expect(new Date(res.body.consentimientoEn).getTime()).not.toBeNaN();
+    });
+
+    it('POST con visita: 201 si el proyecto tiene sala; formato inválido -> 400; sin sala -> 400', async () => {
+      const visita = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+      repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID, proyecto: { salaDireccion: '1 Sur 100' } });
+      const res = await http().post('/api/solicitudes').send({ ...body, visitaPreferida: visita }).expect(201);
+      expect(new Date(res.body.visitaPreferida).toISOString()).toBe(visita);
+
+      await http().post('/api/solicitudes').send({ ...body, visitaPreferida: 'mañana a las 5' }).expect(400);
+      repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID, proyecto: { salaDireccion: null } });
+      await http().post('/api/solicitudes').send({ ...body, visitaPreferida: visita }).expect(400);
     });
 
     it.each([
@@ -749,6 +810,19 @@ describe('API (e2e, BD simulada)', () => {
 
     it('GET con ADMIN -> 200', () =>
       http().get('/api/solicitudes').set(auth(adminToken)).expect(200));
+
+    it('GET /:id (cotización) con su modelo para SECRETARIO y ADMIN; 401, 404 y 400', async () => {
+      repo(Solicitud).findOne.mockResolvedValue({ id: UUID, nombre: 'Ana', modeloCasa: { id: 'm1', nombreModelo: 'Aurora' } });
+      const res = await http().get(`/api/solicitudes/${UUID}`).set(auth(secretarioToken)).expect(200);
+      expect(res.body.modeloCasa.nombreModelo).toBe('Aurora');
+      expect(repo(Solicitud).findOne).toHaveBeenCalledWith({ where: { id: UUID }, relations: { modeloCasa: { proyecto: { ciudad: { region: true } } } } });
+      await http().get(`/api/solicitudes/${UUID}`).set(auth(adminToken)).expect(200);
+
+      await http().get(`/api/solicitudes/${UUID}`).expect(401);
+      await http().get('/api/solicitudes/123').set(auth(secretarioToken)).expect(400);
+      repo(Solicitud).findOne.mockResolvedValue(null);
+      await http().get(`/api/solicitudes/${UUID}`).set(auth(secretarioToken)).expect(404);
+    });
 
     it('PATCH contactado con SECRETARIO -> 200', async () => {
       repo(Solicitud).findOne.mockResolvedValue({ id: UUID, contactado: false });
@@ -819,6 +893,13 @@ describe('API (e2e, BD simulada)', () => {
 
     it('presigned-url sin token -> 401', () =>
       http().post('/api/s3/presigned-url').send(archivo).expect(401));
+
+    it('SECRETARIO: puede subir a perfiles (201) pero no a otras carpetas (403)', async () => {
+      const res = await http().post('/api/s3/presigned-url').set(auth(secretarioToken))
+        .send({ ...archivo, carpeta: 'perfiles' }).expect(201);
+      expect(res.body.key).toMatch(/^perfiles\/.+\.jpg$/);
+      await http().post('/api/s3/presigned-url').set(auth(secretarioToken)).send(archivo).expect(403);
+    });
 
     it('presigned-url con ADMIN -> 201 con uploadUrl firmado', async () => {
       const res = await http().post('/api/s3/presigned-url').set(auth(adminToken)).send(archivo).expect(201);

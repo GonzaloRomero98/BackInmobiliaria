@@ -26,4 +26,12 @@ export class Usuario {
     @Column({ default: true })
     activo: boolean;
 
+    // Los tokens emitidos antes de esta fecha dejan de servir (ISO 27001 A.5.17)
+    @Column({ name: 'contrasena_cambiada_en', type: 'timestamptz', nullable: true })
+    contrasenaCambiadaEn: Date | null;
+
+    // Foto de perfil en la carpeta `perfiles` del bucket (null = se muestran las iniciales)
+    @Column({ name: 'foto_url', type: 'varchar', length: 500, nullable: true })
+    fotoUrl: string | null;
+
 }

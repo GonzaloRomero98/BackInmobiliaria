@@ -54,3 +54,6 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Caché de compilación de TypeScript (cambia en cada build y choca en git pull)
+*.tsbuildinfo

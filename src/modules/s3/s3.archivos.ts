@@ -16,6 +16,8 @@ export const REGLAS_CARPETA = {
     proyectos: {tipos: IMAGENES, maxBytes: 10 * MB},
     modelosImagenes: {tipos: IMAGENES, maxBytes: 10 * MB},
     modelos3D: {tipos: MODELOS_3D, maxBytes: 100 * MB},
+    // Foto de perfil de los usuarios del panel (la única carpeta que puede usar el SECRETARIO)
+    perfiles: {tipos: IMAGENES, maxBytes: 2 * MB},
 } as const;
 
 export type CarpetaS3 = keyof typeof REGLAS_CARPETA;

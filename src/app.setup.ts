@@ -32,8 +32,8 @@ export function configurarApp(app: INestApplication) {
 
   app.setGlobalPrefix('api');
 
-  // Documentación OpenAPI en /api/docs (desactivable con SWAGGER=false)
-  if (config.get<string>('SWAGGER') !== 'false') {
+  // Documentación OpenAPI en /api/docs: apagada por defecto, se activa con SWAGGER=true (ISO 27001 A.8.9)
+  if (config.get<string>('SWAGGER') === 'true') {
     const documento = SwaggerModule.createDocument(
       app,
       new DocumentBuilder()

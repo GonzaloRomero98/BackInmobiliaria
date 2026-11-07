@@ -42,6 +42,22 @@ export class Proyecto{
     @Column({name:'fecha_entrega', type:'date', nullable:true})
     fechaEntrega: string | null;
 
+    // Sala de ventas (opcional): una por proyecto
+    @Column({name:'sala_direccion', type:'varchar', length:200, nullable:true})
+    salaDireccion: string | null;
+
+    @Column({name:'sala_horario', type:'varchar', length:150, nullable:true})
+    salaHorario: string | null;
+
+    @Column({name:'sala_telefono', type:'varchar', length:20, nullable:true})
+    salaTelefono: string | null;
+
+    @Column({name:'sala_latitud', type:'decimal', precision:9, scale:6, nullable:true, transformer:decimalANumero})
+    salaLatitud: number | null;
+
+    @Column({name:'sala_longitud', type:'decimal', precision:9, scale:6, nullable:true, transformer:decimalANumero})
+    salaLongitud: number | null;
+
     @Column({default:true})
     activo:boolean;
 
