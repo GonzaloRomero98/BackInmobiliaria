@@ -776,10 +776,20 @@ describe('API (e2e, BD simulada)', () => {
       ['sin aceptar la política', { aceptaPrivacidad: undefined }],
       ['rechazando la política', { aceptaPrivacidad: false }],
       ['con correo inválido', { correo: 'x' }],
+      ['con celular corto', { celular: '1234' }],
+      ['con celular fijo', { celular: '+56 2 2345 6789' }],
+      ['con celular extranjero', { celular: '+54 9 11 2345 6789' }],
     ])('POST %s -> 400', async (_caso, cambio) => {
       repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID });
       await http().post('/api/solicitudes').send({ ...body, ...cambio }).expect(400);
     });
+
+    it.each(['9 1234 5678', '912345678', '+56 9 1234-5678', '56912345678'])(
+      'POST con celular "%s" se guarda como +56912345678', async (celular) => {
+        repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID });
+        const res = await http().post('/api/solicitudes').send({ ...body, celular }).expect(201);
+        expect(res.body.celular).toBe('+56912345678');
+      });
 
     it('POST con modelo inexistente -> 404', () =>
       http().post('/api/solicitudes').send(body).expect(404));
@@ -870,7 +880,7 @@ describe('API (e2e, BD simulada)', () => {
       repo(Auditoria).save.mockRejectedValueOnce(new Error('BD caída'));
       repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID });
       await http().post('/api/solicitudes').send({
-        nombre: 'A', apellido: 'B', correo: 'a@b.cl', celular: '1', id_modelo_casa: UUID, aceptaPrivacidad: true,
+        nombre: 'A', apellido: 'B', correo: 'a@b.cl', celular: '+56911111111', id_modelo_casa: UUID, aceptaPrivacidad: true,
       }).expect(201);
       await esperarAuditoria();
     });

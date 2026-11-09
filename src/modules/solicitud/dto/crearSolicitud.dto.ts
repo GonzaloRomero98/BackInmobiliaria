@@ -1,4 +1,13 @@
-import { Equals, IsEmail, IsISO8601, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
+import { Transform } from "class-transformer";
+import { Equals, IsEmail, IsISO8601, IsNotEmpty, IsOptional, IsString, IsUUID, Matches, MaxLength } from "class-validator";
+
+// Acepta "9 1234 5678", "912345678", "+56 9 1234-5678"... y lo deja como +569XXXXXXXX para wa.me
+export function normalizarCelular(valor: string): string {
+    const digitos = valor.replace(/\D/g, '');
+    if (/^569\d{8}$/.test(digitos)) return '+' + digitos;
+    if (/^9\d{8}$/.test(digitos)) return '+56' + digitos;
+    return valor.trim();
+}
 
 export class CrearSolicitudDto{
     @IsString()
@@ -14,9 +23,9 @@ export class CrearSolicitudDto{
     @IsEmail()
     correo:string;
 
+    @Transform(({value}) => typeof value === 'string' ? normalizarCelular(value) : value)
     @IsString()
-    @IsNotEmpty()
-    @MaxLength(20)
+    @Matches(/^\+569\d{8}$/, {message:'El celular debe ser un móvil chileno: +56 9 XXXX XXXX'})
     celular:string;
 
     @IsOptional()
