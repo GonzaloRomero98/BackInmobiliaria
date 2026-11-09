@@ -15,6 +15,7 @@ import { ProyectoModule } from "./modules/proyecto/proyecto.module";
 import { ModeloCasaModule } from "./modules/modeloCasa/modelo-casa.module";
 import { CaracteristicaModule } from "./modules/caracteristicas/caracteristica.module";
 import { SolicitudModule } from "./modules/solicitud/solicitud.module";
+import { ReservaModule } from "./modules/reserva/reserva.module";
 import { AuditoriaModule } from "./modules/auditoria/auditoria.module";
 import { AuditoriaMiddleware } from "./modules/auditoria/auditoria.middleware";
 import { EstadoBaseDatosModule } from "./modules/estadoBaseDatos/estado-base-datos.module";
@@ -46,6 +47,7 @@ import { opcionesBaseDatos } from "./database/opciones-bd";
     ModeloCasaModule,
     CaracteristicaModule,
     SolicitudModule,
+    ReservaModule,
     MetricasModule
   ],
   controllers: [AppController],
