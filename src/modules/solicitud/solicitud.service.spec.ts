@@ -1,14 +1,16 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FindOperator, Repository } from 'typeorm';
 import { celdaCsv, SolicitudService } from './solicitud.service';
 import { Solicitud } from './entities/solicitud.entity';
 import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { Reserva } from '../reserva/entities/reserva.entity';
 
 describe('SolicitudService', () => {
   let solicitudRepo: { findOne: jest.Mock; find: jest.Mock; save: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
   let modeloRepo: { findOne: jest.Mock };
+  let reservaRepo: { exists: jest.Mock; find: jest.Mock };
   let auditoria: { registrar: jest.Mock };
   let qb: Record<'delete' | 'where' | 'execute', jest.Mock>;
   let service: SolicitudService;
@@ -23,6 +25,7 @@ describe('SolicitudService', () => {
       modeloRepo as unknown as Repository<ModeloCasa>,
       new ConfigService(config),
       auditoria as unknown as AuditoriaService,
+      reservaRepo as unknown as Repository<Reserva>,
     );
   }
 
@@ -35,6 +38,7 @@ describe('SolicitudService', () => {
       delete: jest.fn(), createQueryBuilder: jest.fn(() => qb),
     };
     modeloRepo = { findOne: jest.fn() };
+    reservaRepo = { exists: jest.fn().mockResolvedValue(false), find: jest.fn().mockResolvedValue([]) };
     auditoria = { registrar: jest.fn() };
     crear();
   });
@@ -186,6 +190,50 @@ describe('SolicitudService', () => {
       solicitudRepo.delete.mockResolvedValue({ affected: 0 });
       await service.eliminarVencidas();
       expect((Date.now() - fechaLimite().getTime()) / 86_400_000).toBeCloseTo(30, 2);
+    });
+
+    it('excluye las solicitudes con reserva activa o venta', async () => {
+      reservaRepo.find.mockResolvedValue([{ solicitud: { id: 's9' } }, { solicitud: { id: 's8' } }]);
+      solicitudRepo.delete.mockResolvedValue({ affected: 1 });
+      await service.eliminarVencidas();
+      const id = solicitudRepo.delete.mock.calls[0][0].id as FindOperator<unknown>;
+      expect(id.type).toBe('not');
+      expect(JSON.stringify(id)).toContain('s9');
+      expect(JSON.stringify(id)).toContain('s8');
+    });
+
+    it('sin reservas activas no filtra por id', async () => {
+      solicitudRepo.delete.mockResolvedValue({ affected: 0 });
+      await service.eliminarVencidas();
+      expect(solicitudRepo.delete.mock.calls[0][0].id).toBeUndefined();
+    });
+  });
+
+  describe('solicitudes con reserva activa', () => {
+    const MENSAJE = 'La solicitud tiene una reserva activa o una venta; sus datos se conservan para ejecutar el contrato. Si la reserva se anula, se podrá eliminar.';
+
+    it('eliminarSolicitud responde 409 y no borra', async () => {
+      reservaRepo.exists.mockResolvedValue(true);
+      await expect(service.eliminarSolicitud('s1')).rejects.toThrow(new ConflictException(MENSAJE));
+      expect(solicitudRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('eliminarPorCorreo responde 409 sin borrar nada, comparando el correo sin mayúsculas', async () => {
+      reservaRepo.exists.mockResolvedValue(true);
+      await expect(service.eliminarPorCorreo('J@P.cl')).rejects.toThrow(new ConflictException(MENSAJE));
+      expect(qb.execute).not.toHaveBeenCalled();
+      const correo = reservaRepo.exists.mock.calls[0][0].where.solicitud.correo as FindOperator<unknown>;
+      expect(correo.type).toBe('raw');
+      expect(correo.getSql?.('"correo"')).toBe('LOWER("correo") = LOWER(:correo)');
+      expect(correo.objectLiteralParameters).toEqual({ correo: 'J@P.cl' });
+    });
+
+    it('la bandeja y el detalle traen las reservas', async () => {
+      solicitudRepo.findOne.mockResolvedValue({ id: 's1' });
+      await service.mostrarSolicitudes();
+      await service.obtenerSolicitud('s1');
+      expect(solicitudRepo.find.mock.calls[0][0].relations).toMatchObject({ reservas: true });
+      expect(solicitudRepo.findOne.mock.calls[0][0].relations).toMatchObject({ reservas: true });
     });
   });
 });

@@ -2,12 +2,13 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { Solicitud } from "./entities/solicitud.entity";
 import { ModeloCasa } from "../modeloCasa/entities/modeloCasa.entity";
+import { Reserva } from "../reserva/entities/reserva.entity";
 import { AuthModule } from "../auth/auth.module";
 import { SolicitudController } from "./solicitud.controller";
 import { SolicitudService } from "./solicitud.service";
 
 @Module({
-    imports:[TypeOrmModule.forFeature([Solicitud, ModeloCasa]), AuthModule],
+    imports:[TypeOrmModule.forFeature([Solicitud, ModeloCasa, Reserva]), AuthModule],
     controllers:[SolicitudController],
     providers:[SolicitudService],
     exports:[TypeOrmModule]

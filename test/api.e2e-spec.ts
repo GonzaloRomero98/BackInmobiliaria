@@ -16,6 +16,7 @@ import { Region } from '../src/modules/ubicacion/entities/region.entity';
 import { ModeloCasa } from '../src/modules/modeloCasa/entities/modeloCasa.entity';
 import { GaleriaModeloCasa } from '../src/modules/modeloCasa/entities/galeriaModeloCasa.entity';
 import { Solicitud } from '../src/modules/solicitud/entities/solicitud.entity';
+import { Reserva } from '../src/modules/reserva/entities/reserva.entity';
 import { Auditoria } from '../src/modules/auditoria/entities/auditoria.entity';
 import { NormativaProyecto } from '../src/modules/proyecto/entities/normativaProyecto.entity';
 import { EntornoService } from '../src/modules/proyecto/entorno.service';
@@ -34,7 +35,7 @@ Object.assign(process.env, {
 delete process.env.AWS_SESSION_TOKEN;
 
 type MockRepo = Record<
-  'find' | 'findOne' | 'findBy' | 'findAndCount' | 'count' | 'create' | 'save' | 'remove' | 'delete' | 'update' | 'createQueryBuilder',
+  'find' | 'findOne' | 'findBy' | 'findAndCount' | 'count' | 'exists' | 'create' | 'save' | 'remove' | 'delete' | 'update' | 'createQueryBuilder',
   jest.Mock
 >;
 
@@ -52,6 +53,7 @@ function repo(entity: unknown): MockRepo {
       findBy: jest.fn(),
       findAndCount: jest.fn(),
       count: jest.fn(),
+      exists: jest.fn(),
       create: jest.fn((x) => x),
       save: jest.fn(async (x) => ({ ...x, id: x.id ?? UUID })),
       remove: jest.fn(),
@@ -830,7 +832,7 @@ describe('API (e2e, BD simulada)', () => {
       repo(Solicitud).findOne.mockResolvedValue({ id: UUID, nombre: 'Ana', modeloCasa: { id: 'm1', nombreModelo: 'Aurora' } });
       const res = await http().get(`/api/solicitudes/${UUID}`).set(auth(secretarioToken)).expect(200);
       expect(res.body.modeloCasa.nombreModelo).toBe('Aurora');
-      expect(repo(Solicitud).findOne).toHaveBeenCalledWith({ where: { id: UUID }, relations: { modeloCasa: { proyecto: { ciudad: { region: true } } } } });
+      expect(repo(Solicitud).findOne).toHaveBeenCalledWith({ where: { id: UUID }, relations: { modeloCasa: { proyecto: { ciudad: { region: true } } }, reservas: true } });
       await http().get(`/api/solicitudes/${UUID}`).set(auth(adminToken)).expect(200);
 
       await http().get(`/api/solicitudes/${UUID}`).expect(401);
@@ -865,6 +867,14 @@ describe('API (e2e, BD simulada)', () => {
 
       it('DELETE sin correo válido -> 400', () =>
         http().delete('/api/solicitudes?correo=x').set(auth(adminToken)).expect(400));
+
+      it('con reserva activa o venta -> 409 con el motivo, por id y por correo', async () => {
+        repo(Reserva).exists.mockResolvedValue(true);
+        const res = await http().delete(`/api/solicitudes/${UUID}`).set(auth(adminToken)).expect(409);
+        expect(res.body.message).toContain('se conservan para ejecutar el contrato');
+        await http().delete('/api/solicitudes?correo=j@p.cl').set(auth(adminToken)).expect(409);
+        repo(Reserva).exists.mockResolvedValue(false);
+      });
 
       it('SECRETARIO no puede borrar -> 403', () =>
         http().delete(`/api/solicitudes/${UUID}`).set(auth(secretarioToken)).expect(403));

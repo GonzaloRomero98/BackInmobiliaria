@@ -1,14 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { Solicitud } from "./entities/solicitud.entity";
-import { LessThan, Repository } from "typeorm";
+import { In, LessThan, Not, Raw, Repository } from "typeorm";
 import { ModeloCasa } from "../modeloCasa/entities/modeloCasa.entity";
 import { CrearSolicitudDto } from "./dto/crearSolicitud.dto";
 import { AuditoriaService } from "../auditoria/auditoria.service";
+import { Reserva } from "../reserva/entities/reserva.entity";
+import { ESTADOS_ACTIVOS } from "../reserva/reserva.enum";
 
 const RETENCION_DIAS_POR_DEFECTO = 365;
+// Ley 19.628: los datos necesarios para ejecutar un contrato se conservan; el admin usa este texto para responder al titular
+const MSJ_RESERVA_ACTIVA = 'La solicitud tiene una reserva activa o una venta; sus datos se conservan para ejecutar el contrato. Si la reserva se anula, se podrá eliminar.';
 const VISITA_DIAS_MAXIMOS = 60;
 
 // Los datos vienen de un formulario público: un texto que empieza con =, @, +, - etc. Excel lo ejecutaría
@@ -26,7 +30,9 @@ export class SolicitudService{
         @InjectRepository(ModeloCasa)
         private readonly modeloCasaRepostory : Repository<ModeloCasa>,
         private readonly configService: ConfigService,
-        private readonly auditoriaService: AuditoriaService
+        private readonly auditoriaService: AuditoriaService,
+        @InjectRepository(Reserva)
+        private readonly reservaRepository : Repository<Reserva>
     ){}
 
     async crearSolicitud(crearSolicitudDto:CrearSolicitudDto):Promise<Solicitud>{
@@ -65,12 +71,12 @@ export class SolicitudService{
     }
 
     mostrarSolicitudes(): Promise<Solicitud[]>{
-        return this.solicitudRepository.find({relations:{modeloCasa:true},order:{creadoEn:'DESC'}})
+        return this.solicitudRepository.find({relations:{modeloCasa:true, reservas:true},order:{creadoEn:'DESC'}})
     }
 
     async obtenerSolicitud(id:string):Promise<Solicitud>{
         // Las relaciones eager no se encadenan desde una relación pedida explícitamente: sin esto el proyecto llega sin ciudad
-        const solicitud = await this.solicitudRepository.findOne({where:{id}, relations:{modeloCasa:{proyecto:{ciudad:{region:true}}}}});
+        const solicitud = await this.solicitudRepository.findOne({where:{id}, relations:{modeloCasa:{proyecto:{ciudad:{region:true}}}, reservas:true}});
         if(!solicitud){
             throw new NotFoundException('Solicitud no encontrada');
         }
@@ -110,6 +116,9 @@ export class SolicitudService{
     }
 
     async eliminarSolicitud(id:string):Promise<void>{
+        if(await this.reservaRepository.exists({where:{solicitud:{id}, estado:In(ESTADOS_ACTIVOS)}})){
+            throw new ConflictException(MSJ_RESERVA_ACTIVA);
+        }
         const resultado = await this.solicitudRepository.delete({id});
         if(!resultado.affected){
             throw new NotFoundException('Solicitud no encontrada');
@@ -118,6 +127,14 @@ export class SolicitudService{
 
     // Comparación exacta sin distinguir mayúsculas (sin LIKE, para que "_" o "%" no actúen como comodines)
     async eliminarPorCorreo(correo:string):Promise<{eliminadas:number}>{
+        // Todo o nada: si una de sus solicitudes tiene reserva activa, no se borra ninguna
+        const conReserva = await this.reservaRepository.exists({where:{
+            estado:In(ESTADOS_ACTIVOS),
+            solicitud:{correo:Raw((columna) => `LOWER(${columna}) = LOWER(:correo)`, {correo})},
+        }});
+        if(conReserva){
+            throw new ConflictException(MSJ_RESERVA_ACTIVA);
+        }
         const resultado = await this.solicitudRepository.createQueryBuilder()
             .delete()
             .where('LOWER(correo) = LOWER(:correo)', {correo})
@@ -130,7 +147,12 @@ export class SolicitudService{
     async eliminarVencidas():Promise<number>{
         const dias = Number(this.configService.get('SOLICITUD_RETENCION_DIAS') ?? RETENCION_DIAS_POR_DEFECTO);
         const limite = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
-        const resultado = await this.solicitudRepository.delete({creadoEn: LessThan(limite)});
+        // Las solicitudes con reserva activa o venta se conservan mientras dure el contrato
+        const protegidas = await this.reservaRepository.find({
+            where:{estado:In(ESTADOS_ACTIVOS)}, relations:{solicitud:true}, select:{id:true, solicitud:{id:true}},
+        });
+        const ids = protegidas.map((r) => r.solicitud.id);
+        const resultado = await this.solicitudRepository.delete({creadoEn: LessThan(limite), ...(ids.length ? {id:Not(In(ids))} : {})});
         const eliminadas = resultado.affected ?? 0;
 
         await this.auditoriaService.registrar({
