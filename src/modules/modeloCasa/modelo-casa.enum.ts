@@ -14,6 +14,12 @@ export enum EstadoModelo{
     VENDIDO='VENDIDO'
 }
 
+// Estado comercial derivado de los contadores; lo usan las reservas y la edición de unidades
+export function calcularEstado(unidades:number, reservadas:number, vendidas:number):EstadoModelo{
+    if(unidades - reservadas - vendidas > 0) return EstadoModelo.DISPONIBLE;
+    return reservadas > 0 ? EstadoModelo.RESERVADO : EstadoModelo.VENDIDO;
+}
+
 export enum TipoVivienda{
     CASA='CASA',
     DEPARTAMENTO='DEPARTAMENTO'
