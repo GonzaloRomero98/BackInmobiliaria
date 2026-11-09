@@ -748,9 +748,42 @@ describe('API (e2e, BD simulada)', () => {
       const qb = { innerJoin: jest.fn(), select: jest.fn(), addSelect: jest.fn(), groupBy: jest.fn(), orderBy: jest.fn(), limit: jest.fn(), getRawMany: jest.fn().mockResolvedValue([]) };
       for (const m of ['innerJoin', 'select', 'addSelect', 'groupBy', 'orderBy', 'limit'] as const) qb[m].mockReturnValue(qb);
       repo(Solicitud).createQueryBuilder.mockReturnValueOnce(qb);
+      const qbCasas = { select: jest.fn(), addSelect: jest.fn(), where: jest.fn(), getRawOne: jest.fn().mockResolvedValue({ unidades: '4', reservados: '1', vendidos: null }) };
+      for (const m of ['select', 'addSelect', 'where'] as const) qbCasas[m].mockReturnValue(qbCasas);
+      repo(ModeloCasa).createQueryBuilder.mockReturnValueOnce(qbCasas);
       const res = await http().get('/api/metricas').set(auth(adminToken)).expect(200);
-      expect(res.body).toMatchObject({ solicitudes: { pendientes: 0 }, modelos: { publicados: 0 }, masSolicitados: [] });
+      expect(res.body).toMatchObject({
+        solicitudes: { pendientes: 0 }, modelos: { publicados: 0, unidades: 4, disponibles: 3, reservados: 1, vendidos: 0 }, masSolicitados: [],
+      });
       await http().get('/api/metricas').set(auth(secretarioToken)).expect(403);
+    });
+  });
+
+  describe('reservas', () => {
+    const crear = { id_solicitud: UUID, rut: '12.345.678-5' };
+
+    it('POST sin token -> 401', () =>
+      http().post('/api/reservas').send(crear).expect(401));
+
+    it.each([
+      ['RUT con dígito verificador incorrecto', { rut: '12.345.678-4' }],
+      ['RUT vacío', { rut: '' }],
+      ['id_solicitud que no es UUID', { id_solicitud: 'x' }],
+      ['lote de más de 50 caracteres', { lote: 'x'.repeat(51) }],
+    ])('POST con %s -> 400', (_caso, cambio) =>
+      http().post('/api/reservas').set(auth(secretarioToken)).send({ ...crear, ...cambio }).expect(400));
+
+    it('POST con RUT inválido explica el motivo', async () => {
+      const res = await http().post('/api/reservas').set(auth(secretarioToken)).send({ ...crear, rut: '1-1' }).expect(400);
+      expect(res.body.message).toContain('RUT inválido');
+    });
+
+    it.each(['RESERVADA', 'PAGADA', undefined])('PATCH estado %p -> 400', (estado) =>
+      http().patch(`/api/reservas/${UUID}/estado`).set(auth(adminToken)).send({ estado }).expect(400));
+
+    it('PATCH con id que no es UUID -> 400; sin token -> 401', async () => {
+      await http().patch('/api/reservas/x/estado').set(auth(adminToken)).send({ estado: 'VENDIDA' }).expect(400);
+      await http().patch(`/api/reservas/${UUID}/estado`).send({ estado: 'VENDIDA' }).expect(401);
     });
   });
 
