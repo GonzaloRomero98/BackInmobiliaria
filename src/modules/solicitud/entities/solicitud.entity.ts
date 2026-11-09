@@ -1,5 +1,6 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
 import { ModeloCasa } from "../../modeloCasa/entities/modeloCasa.entity";
+import { Reserva } from "../../reserva/entities/reserva.entity";
 
 @Entity('solicitud')
 export class Solicitud{
@@ -37,6 +38,9 @@ export class Solicitud{
     @ManyToOne(()=> ModeloCasa,{nullable:false})
     @JoinColumn({name:'id_modelo_casa'})
     modeloCasa: ModeloCasa;
+
+    @OneToMany(()=> Reserva, (reserva) => reserva.solicitud)
+    reservas: Reserva[];
 
 
 }

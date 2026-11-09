@@ -63,9 +63,20 @@ export class ModeloCasa{
     @Column({name:'img_principal', type:'varchar',nullable:false})
     imgPrincipal:string;
 
-    // Disponibilidad comercial (DISPONIBLE/RESERVADO/VENDIDO); "activo" indica publicado o borrador
+    // Calculado por calcularEstado() desde los contadores; no se edita a mano. "activo" indica publicado o borrador
     @Column({type:'varchar', length:20, default:EstadoModelo.DISPONIBLE})
     estado:string;
+
+    // Casas de este modelo en el proyecto (las define el admin)
+    @Column({type:'int', default:1})
+    unidades:number;
+
+    // Contadores: solo los modifica ReservaService
+    @Column({name:'unidades_reservadas', type:'int', default:0})
+    unidadesReservadas:number;
+
+    @Column({name:'unidades_vendidas', type:'int', default:0})
+    unidadesVendidas:number;
 
     @Column({default:true})
     activo:boolean;
