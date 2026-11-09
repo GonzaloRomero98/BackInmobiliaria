@@ -100,20 +100,27 @@ export class ModeloCasaService{
             }
         }
 
-        // shortcut: sin bloqueo de fila; una reserva simultánea podría colarse; bloquear como ReservaService si hay varios admins
-        if(cambios.unidades !== undefined){
-            const ocupadas = modelo.unidadesReservadas + modelo.unidadesVendidas;
-            if(cambios.unidades < ocupadas){
-                throw new BadRequestException(`Hay ${ocupadas} unidades reservadas o vendidas`);
-            }
-        }
-
         Object.assign(modelo, cambios);
-        modelo.estado = calcularEstado(modelo.unidades, modelo.unidadesReservadas, modelo.unidadesVendidas);
         if(cambios.bono !== undefined) modelo.bono = cambios.bono?.trim() || null;
         // Se valida el resultado combinado: p. ej. pasar un departamento sin terreno a casa
         this.exigirTerrenoEnCasas(modelo);
-        return this.modeloCasaRepository.save(modelo);
+
+        // save() escribe todas las columnas: los contadores se releen con la fila bloqueada (igual que ReservaService)
+        // para no pisar una reserva confirmada mientras se editaba
+        return this.modeloCasaRepository.manager.transaction(async (manager) => {
+            const actual = await manager.findOne(ModeloCasa, {where:{id}, lock:{mode:'pessimistic_write'}, loadEagerRelations:false});
+            if(!actual){
+                throw new NotFoundException('No se encontro el modelo de la casa');
+            }
+            modelo.unidadesReservadas = actual.unidadesReservadas;
+            modelo.unidadesVendidas = actual.unidadesVendidas;
+            const ocupadas = modelo.unidadesReservadas + modelo.unidadesVendidas;
+            if(cambios.unidades !== undefined && cambios.unidades < ocupadas){
+                throw new BadRequestException(`Hay ${ocupadas} unidades reservadas o vendidas`);
+            }
+            modelo.estado = calcularEstado(modelo.unidades, modelo.unidadesReservadas, modelo.unidadesVendidas);
+            return manager.save(ModeloCasa, modelo);
+        });
     }
 
     private exigirTerrenoEnCasas(modelo:ModeloCasa){

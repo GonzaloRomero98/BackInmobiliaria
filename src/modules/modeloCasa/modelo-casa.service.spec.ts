@@ -42,8 +42,16 @@ describe('ModeloCasaService', () => {
     caracteristicasID: [],
   });
 
+  // Lectura con bloqueo dentro de la transacción de actualizarModeloCasa; por defecto, la misma fila que leyó findOne
+  let bloqueo: { findOne: jest.Mock; save: jest.Mock };
+
   beforeEach(() => {
     modeloRepo = mockRepo();
+    bloqueo = {
+      findOne: jest.fn(async () => modeloRepo.findOne.mock.results.at(-1)?.value),
+      save: jest.fn((_entidad: unknown, x: object) => modeloRepo.save(x)),
+    };
+    Object.assign(modeloRepo, { manager: { transaction: jest.fn((cb: (m: typeof bloqueo) => unknown) => cb(bloqueo)) } });
     proyectoRepo = mockRepo();
     caracRepo = mockRepo();
     galeriaRepo = mockRepo();
@@ -178,6 +186,26 @@ describe('ModeloCasaService', () => {
       it('igual a lo ocupado se permite y deja el modelo RESERVADO', async () => {
         modeloRepo.findOne.mockResolvedValue(ocupado());
         expect(await service.actualizarModeloCasa('m1', { unidades: 3 })).toMatchObject({ unidades: 3, estado: 'RESERVADO' });
+      });
+
+      it('una reserva confirmada durante la edición no se pisa: usa los contadores leídos con la fila bloqueada', async () => {
+        modeloRepo.findOne.mockResolvedValue({ ...existente(), unidades: 3, unidadesReservadas: 0, unidadesVendidas: 0, estado: 'DISPONIBLE' });
+        bloqueo.findOne.mockResolvedValue({ id: 'm1', unidadesReservadas: 3, unidadesVendidas: 0 });
+
+        const r = await service.actualizarModeloCasa('m1', { precio: 4000 });
+
+        expect(bloqueo.findOne).toHaveBeenCalledWith(ModeloCasa, expect.objectContaining({
+          where: { id: 'm1' }, lock: { mode: 'pessimistic_write' }, loadEagerRelations: false,
+        }));
+        expect(r).toMatchObject({ precio: 4000, unidadesReservadas: 3, estado: 'RESERVADO' });
+      });
+
+      it('valida las unidades contra los contadores frescos, no los leídos al inicio', async () => {
+        modeloRepo.findOne.mockResolvedValue({ ...existente(), unidades: 3, unidadesReservadas: 0, unidadesVendidas: 0 });
+        bloqueo.findOne.mockResolvedValue({ id: 'm1', unidadesReservadas: 2, unidadesVendidas: 0 });
+        await expect(service.actualizarModeloCasa('m1', { unidades: 1 }))
+          .rejects.toThrow(new BadRequestException('Hay 2 unidades reservadas o vendidas'));
+        expect(modeloRepo.save).not.toHaveBeenCalled();
       });
 
       it('subir unidades de un modelo agotado lo vuelve DISPONIBLE', async () => {

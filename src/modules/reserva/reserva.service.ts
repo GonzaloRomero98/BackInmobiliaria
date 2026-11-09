@@ -17,11 +17,12 @@ export class ReservaService{
             if(!solicitud){
                 throw new NotFoundException('Solicitud no encontrada');
             }
+
+            // Primero el bloqueo y después las revisiones: así dos POST para la misma solicitud se serializan
+            const modelo = await this.bloquearModelo(manager, solicitud.modeloCasa.id);
             if(await manager.exists(Reserva, {where:{solicitud:{id:solicitud.id}, estado:In(ESTADOS_ACTIVOS)}})){
                 throw new ConflictException('La solicitud ya tiene una reserva activa');
             }
-
-            const modelo = await this.bloquearModelo(manager, solicitud.modeloCasa.id);
             if(modelo.unidades - modelo.unidadesReservadas - modelo.unidadesVendidas <= 0){
                 throw new ConflictException('No quedan unidades de este modelo');
             }
@@ -44,11 +45,13 @@ export class ReservaService{
             if(!reserva){
                 throw new NotFoundException('Reserva no encontrada');
             }
-            if(reserva.estado !== EstadoReserva.RESERVADA || estado === EstadoReserva.RESERVADA){
+
+            // El estado se relee con el modelo ya bloqueado: otra transacción pudo cerrarla mientras esperábamos
+            const modelo = await this.bloquearModelo(manager, reserva.solicitud.modeloCasa.id);
+            const actual = await manager.findOne(Reserva, {where:{id}, loadEagerRelations:false});
+            if(actual?.estado !== EstadoReserva.RESERVADA || estado === EstadoReserva.RESERVADA){
                 throw new BadRequestException('Transición no permitida');
             }
-
-            const modelo = await this.bloquearModelo(manager, reserva.solicitud.modeloCasa.id);
             const reservadas = modelo.unidadesReservadas - 1;
             const vendidas = modelo.unidadesVendidas + (estado === EstadoReserva.VENDIDA ? 1 : 0);
             await manager.update(ModeloCasa, modelo.id, {

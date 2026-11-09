@@ -65,6 +65,12 @@ describe('ReservaService', () => {
       await expect(service.crear(dto)).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('revisa la reserva activa después de bloquear el modelo (dos POST simultáneos se serializan)', async () => {
+      await service.crear(dto);
+      const bloqueo = manager.findOne.mock.calls.findIndex(([entidad]) => entidad === ModeloCasa);
+      expect(manager.findOne.mock.invocationCallOrder[bloqueo]).toBeLessThan(manager.exists.mock.invocationCallOrder[0]);
+    });
+
     it('bloquea el modelo sin relaciones eager', async () => {
       await service.crear(dto);
       expect(manager.findOne).toHaveBeenCalledWith(ModeloCasa, expect.objectContaining({
@@ -119,6 +125,20 @@ describe('ReservaService', () => {
       conReserva(actual);
       await expect(service.cambiarEstado('r1', EstadoReserva.ANULADA)).rejects.toThrow(new BadRequestException('Transición no permitida'));
       expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('relee el estado tras el bloqueo: si otra transacción ya la cerró, no mueve contadores', async () => {
+      conModelo(3, 0, 1);
+      let lecturas = 0;
+      manager.findOne.mockImplementation(async (entidad: unknown) => {
+        // 1ª lectura (sin bloqueo): RESERVADA; tras esperar el bloqueo otra transacción ya la marcó VENDIDA
+        if (entidad === Reserva) return { id: 'r1', estado: lecturas++ === 0 ? EstadoReserva.RESERVADA : EstadoReserva.VENDIDA, solicitud: { modeloCasa: { id: 'm1' } } };
+        if (entidad === ModeloCasa) return modelo;
+        return null;
+      });
+      await expect(service.cambiarEstado('r1', EstadoReserva.ANULADA)).rejects.toThrow(new BadRequestException('Transición no permitida'));
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(manager.save).not.toHaveBeenCalled();
     });
 
     it('de una reserva inexistente lanza NotFoundException', async () => {

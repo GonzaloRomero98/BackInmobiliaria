@@ -61,9 +61,16 @@ function repo(entity: unknown): MockRepo {
       update: jest.fn(),
       createQueryBuilder: jest.fn(() => queryBuilder),
     });
+    // Transacciones de repository.manager: delegan en los repos simulados de cada entidad
+    Object.assign(repos.get(entity)!, { manager: { transaction: (cb: (m: unknown) => unknown) => cb(gestorSimulado) } });
   }
   return repos.get(entity)!;
 }
+
+const gestorSimulado = {
+  findOne: (entidad: unknown, opciones: unknown) => repo(entidad).findOne(opciones),
+  save: (entidad: unknown, datos: unknown) => repo(entidad).save(datos),
+};
 
 const fakeDataSource = {
   options: { type: 'postgres' },
