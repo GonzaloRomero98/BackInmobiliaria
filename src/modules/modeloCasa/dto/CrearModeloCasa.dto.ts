@@ -1,5 +1,5 @@
-import { ArrayUnique, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MaxLength, Min } from "class-validator";
-import { EstadoModelo, Moneda, SUBSIDIOS, TipoOperacion, TipoVivienda } from "../modelo-casa.enum";
+import { ArrayUnique, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
+import { Moneda, SUBSIDIOS, TipoOperacion, TipoVivienda } from "../modelo-casa.enum";
 
 export class CrearModeloCasaDto{
     @IsUUID()
@@ -82,9 +82,12 @@ export class CrearModeloCasaDto{
     @IsInt({each:true})
     caracteristicasID:number[];
 
+    // El estado comercial ya no se envía: se calcula desde las unidades y las reservas
     @IsOptional()
-    @IsEnum(EstadoModelo)
-    estado?:EstadoModelo;
+    @IsInt()
+    @Min(1)
+    @Max(9999)
+    unidades?:number;
 
     // false = borrador: no se ve en el catálogo
     @IsOptional()

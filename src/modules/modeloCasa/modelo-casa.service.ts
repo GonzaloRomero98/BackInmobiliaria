@@ -9,7 +9,7 @@ import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
 import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { FiltrosModeloCasaDto, OrdenModelo } from "./dto/filtrosModeloCasa.dto";
-import { EstadoModelo, TipoVivienda } from "./modelo-casa.enum";
+import { calcularEstado, EstadoModelo, TipoVivienda } from "./modelo-casa.enum";
 
 const ORDEN: Record<OrdenModelo, FindOptionsOrder<ModeloCasa>> = {
     precio_asc: {precio:'ASC'},
@@ -64,7 +64,8 @@ export class ModeloCasaService{
             modeloCasa.bono = crearModeloCasaDto.bono?.trim() || null;
             modeloCasa.imgPrincipal = crearModeloCasaDto.imgPrincipal;
             modeloCasa.caracteristicas = await this.buscarCaracteristicas(crearModeloCasaDto.caracteristicasID);
-            modeloCasa.estado = crearModeloCasaDto.estado ?? EstadoModelo.DISPONIBLE;
+            modeloCasa.unidades = crearModeloCasaDto.unidades ?? 1;
+            modeloCasa.estado = calcularEstado(modeloCasa.unidades, 0, 0);
             modeloCasa.activo = crearModeloCasaDto.activo ?? true;
         this.exigirTerrenoEnCasas(modeloCasa);
 
@@ -99,7 +100,16 @@ export class ModeloCasaService{
             }
         }
 
+        // shortcut: sin bloqueo de fila; una reserva simultánea podría colarse; bloquear como ReservaService si hay varios admins
+        if(cambios.unidades !== undefined){
+            const ocupadas = modelo.unidadesReservadas + modelo.unidadesVendidas;
+            if(cambios.unidades < ocupadas){
+                throw new BadRequestException(`Hay ${ocupadas} unidades reservadas o vendidas`);
+            }
+        }
+
         Object.assign(modelo, cambios);
+        modelo.estado = calcularEstado(modelo.unidades, modelo.unidadesReservadas, modelo.unidadesVendidas);
         if(cambios.bono !== undefined) modelo.bono = cambios.bono?.trim() || null;
         // Se valida el resultado combinado: p. ej. pasar un departamento sin terreno a casa
         this.exigirTerrenoEnCasas(modelo);
@@ -124,7 +134,7 @@ export class ModeloCasaService{
         }
 
         return this.modeloCasaRepository.save(Object.assign(new ModeloCasa(), datos, {
-            nombreModelo, activo:false, estado:EstadoModelo.DISPONIBLE,
+            nombreModelo, activo:false, estado:EstadoModelo.DISPONIBLE, unidadesReservadas:0, unidadesVendidas:0,
             fotos:(fotos ?? []).map(({urlImagen, orden}) => Object.assign(new GaleriaModeloCasa(), {urlImagen, orden})),
         }));
     }

@@ -104,13 +104,13 @@ describe('ModeloCasaService', () => {
     expect(creado.modelo3dUrl).toBeNull();
   });
 
-  it('crear: por defecto DISPONIBLE y publicado; acepta estado y borrador', async () => {
+  it('crear: por defecto 1 unidad, DISPONIBLE y publicado; acepta unidades y borrador', async () => {
     proyectoRepo.findOne.mockResolvedValue({ id: 'p1' });
     modeloRepo.findOne.mockResolvedValue(null);
-    expect(await service.crearModeloCasa(dto())).toMatchObject({ estado: 'DISPONIBLE', activo: true });
+    expect(await service.crearModeloCasa(dto())).toMatchObject({ unidades: 1, estado: 'DISPONIBLE', activo: true });
 
-    const borrador = await service.crearModeloCasa({ ...dto(), estado: EstadoModelo.RESERVADO, activo: false });
-    expect(borrador).toMatchObject({ estado: 'RESERVADO', activo: false });
+    const borrador = await service.crearModeloCasa({ ...dto(), unidades: 25, activo: false });
+    expect(borrador).toMatchObject({ unidades: 25, estado: 'DISPONIBLE', activo: false });
   });
 
   describe('tipo de vivienda y datos comerciales', () => {
@@ -160,9 +160,30 @@ describe('ModeloCasaService', () => {
 
     it('busca sin filtrar por publicado (un borrador se puede editar y publicar)', async () => {
       modeloRepo.findOne.mockResolvedValue({ ...existente(), activo: false });
-      const r = await service.actualizarModeloCasa('m1', { activo: true, estado: EstadoModelo.VENDIDO });
+      const r = await service.actualizarModeloCasa('m1', { activo: true });
       expect(modeloRepo.findOne.mock.calls[0][0].where).toEqual({ id: 'm1' });
-      expect(r).toMatchObject({ activo: true, estado: 'VENDIDO' });
+      expect(r).toMatchObject({ activo: true });
+    });
+
+    describe('unidades', () => {
+      const ocupado = () => ({ ...existente(), unidades: 5, unidadesReservadas: 2, unidadesVendidas: 1, estado: 'DISPONIBLE' });
+
+      it('400 si baja por debajo de lo reservado o vendido, sin guardar', async () => {
+        modeloRepo.findOne.mockResolvedValue(ocupado());
+        await expect(service.actualizarModeloCasa('m1', { unidades: 2 }))
+          .rejects.toThrow(new BadRequestException('Hay 3 unidades reservadas o vendidas'));
+        expect(modeloRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('igual a lo ocupado se permite y deja el modelo RESERVADO', async () => {
+        modeloRepo.findOne.mockResolvedValue(ocupado());
+        expect(await service.actualizarModeloCasa('m1', { unidades: 3 })).toMatchObject({ unidades: 3, estado: 'RESERVADO' });
+      });
+
+      it('subir unidades de un modelo agotado lo vuelve DISPONIBLE', async () => {
+        modeloRepo.findOne.mockResolvedValue({ ...ocupado(), unidades: 3, estado: 'RESERVADO' });
+        expect(await service.actualizarModeloCasa('m1', { unidades: 4 })).toMatchObject({ estado: 'DISPONIBLE' });
+      });
     });
 
     it('aplica solo los campos enviados y mapea estacionamiento', async () => {
@@ -222,6 +243,7 @@ describe('ModeloCasaService', () => {
   describe('duplicarModeloCasa', () => {
     const original = () => ({
       id: 'm1', creadoEn: new Date(), nombreModelo: 'Casa A', precio: 3500, activo: true, estado: EstadoModelo.VENDIDO,
+      unidades: 5, unidadesReservadas: 2, unidadesVendidas: 3,
       proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: 'https://x/i.jpg',
       fotos: [{ id: 'f1', urlImagen: 'https://x/1.jpg', orden: 0 }, { id: 'f2', urlImagen: 'https://x/2.jpg', orden: 1 }],
     });
@@ -237,6 +259,7 @@ describe('ModeloCasaService', () => {
       const guardado = modeloRepo.save.mock.calls[0][0];
       expect(guardado).toMatchObject({
         nombreModelo: 'Casa B', precio: 3500, activo: false, estado: EstadoModelo.DISPONIBLE,
+        unidades: 5, unidadesReservadas: 0, unidadesVendidas: 0,
         proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: 'https://x/i.jpg',
       });
       expect(guardado.id).toBeUndefined();

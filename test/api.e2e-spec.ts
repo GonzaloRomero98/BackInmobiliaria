@@ -546,11 +546,16 @@ describe('API (e2e, BD simulada)', () => {
     it('PATCH de modelo inexistente -> 404', () =>
       http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ precio: 1 }).expect(404));
 
-    it('PATCH estado y publicar: valida el estado', async () => {
-      repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID, nombreModelo: 'Casa A', activo: false, caracteristicas: [] });
-      const res = await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ estado: 'RESERVADO', activo: true }).expect(200);
-      expect(res.body).toMatchObject({ estado: 'RESERVADO', activo: true });
-      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ estado: 'ARRENDADO' }).expect(400);
+    it('PATCH unidades y publicar: el estado lo calcula el servidor (el enviado se ignora)', async () => {
+      repo(ModeloCasa).findOne.mockResolvedValue({
+        id: UUID, nombreModelo: 'Casa A', activo: false, caracteristicas: [],
+        unidades: 2, unidadesReservadas: 2, unidadesVendidas: 0, estado: 'RESERVADO',
+      });
+      const res = await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ estado: 'VENDIDO', unidades: 4, activo: true }).expect(200);
+      expect(res.body).toMatchObject({ unidades: 4, estado: 'DISPONIBLE', activo: true });
+      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ unidades: 0 }).expect(400);
+      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ unidades: 1.5 }).expect(400);
+      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ unidades: 1 }).expect(400);
     });
 
     it('GET /admin lista también borradores; solo ADMIN', async () => {
