@@ -426,6 +426,25 @@ describe('API (e2e, BD simulada)', () => {
       await http().delete(`/api/proyectos/${UUID}`).set(auth(secretarioToken)).expect(403);
     });
 
+    it('PATCH :id/publicar vuelve a publicar un despublicado; publicado o inexistente -> 404; SECRETARIO -> 403', async () => {
+      repo(Proyecto).update.mockResolvedValue({ affected: 1 });
+      await http().patch(`/api/proyectos/${UUID}/publicar`).set(auth(adminToken)).expect(200);
+      expect(repo(Proyecto).update).toHaveBeenCalledWith({ id: UUID, activo: false }, { activo: true });
+
+      repo(Proyecto).update.mockResolvedValue({ affected: 0 });
+      await http().patch(`/api/proyectos/${UUID}/publicar`).set(auth(adminToken)).expect(404);
+      await http().patch(`/api/proyectos/${UUID}/publicar`).set(auth(secretarioToken)).expect(403);
+    });
+
+    it('GET /admin lista también los despublicados; solo ADMIN', async () => {
+      repo(Proyecto).find.mockResolvedValue([{ id: UUID, activo: false }]);
+      const res = await http().get('/api/proyectos/admin').set(auth(adminToken)).expect(200);
+      expect(res.body).toEqual([{ id: UUID, activo: false }]);
+      expect(repo(Proyecto).find).toHaveBeenLastCalledWith({ order: { activo: 'DESC', nombre: 'ASC' } });
+      await http().get('/api/proyectos/admin').expect(401);
+      await http().get('/api/proyectos/admin').set(auth(secretarioToken)).expect(403);
+    });
+
     const normativa = {
       instrumento: 'Plan Regulador Comunal de Talca', zona: 'ZH-2', usosPermitidos: 'Residencial y equipamiento menor',
       alturaMaximaPisos: 4, alturaMaximaMetros: 14, densidadMaxima: 400, coefConstructibilidad: 1.6,
@@ -868,6 +887,20 @@ describe('API (e2e, BD simulada)', () => {
     it('GET con ADMIN -> 200', () =>
       http().get('/api/solicitudes').set(auth(adminToken)).expect(200));
 
+    it('GET paginado: valores por defecto, query convertida a números y validada', async () => {
+      repo(Solicitud).findAndCount.mockResolvedValue([[{ id: UUID }], 41]);
+      repo(Solicitud).count.mockResolvedValue(3);
+      const res = await http().get('/api/solicitudes').set(auth(secretarioToken)).expect(200);
+      expect(res.body).toEqual({ solicitudes: [{ id: UUID }], total: 41, pendientes: 3, pagina: 1, limite: 20 });
+
+      await http().get('/api/solicitudes?pagina=3&limite=10&filtro=contactados').set(auth(secretarioToken)).expect(200);
+      expect(repo(Solicitud).findAndCount).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 20, take: 10, where: { contactado: true } }));
+
+      for (const q of ['pagina=0', 'pagina=x', 'limite=101', 'filtro=borradas']) {
+        await http().get(`/api/solicitudes?${q}`).set(auth(secretarioToken)).expect(400);
+      }
+    });
+
     it('GET /:id (cotización) con su modelo para SECRETARIO y ADMIN; 401, 404 y 400', async () => {
       repo(Solicitud).findOne.mockResolvedValue({ id: UUID, nombre: 'Ana', modeloCasa: { id: 'm1', nombreModelo: 'Aurora' } });
       const res = await http().get(`/api/solicitudes/${UUID}`).set(auth(secretarioToken)).expect(200);
@@ -922,13 +955,33 @@ describe('API (e2e, BD simulada)', () => {
   });
 
   describe('auditoría', () => {
-    it('GET /api/auditoria solo para ADMIN, paginado', async () => {
-      repo(Auditoria).findAndCount.mockResolvedValue([[{ id: 'a1' }], 1]);
-      const res = await http().get('/api/auditoria?pagina=2&limite=500').set(auth(adminToken)).expect(200);
-      expect(res.body).toEqual({ registros: [{ id: 'a1' }], total: 1, pagina: 2, limite: 200 });
-      expect(repo(Auditoria).findAndCount).toHaveBeenCalledWith({ order: { fecha: 'DESC' }, skip: 200, take: 200 });
+    it('GET /api/auditoria solo para ADMIN, paginado y con descripción', async () => {
+      repo(Auditoria).findAndCount.mockResolvedValue([[{ id: 'a1', accion: 'POST /api/auth/login', metodo: 'POST', ruta: '/api/auth/login', estado: 401, exito: false }], 1]);
+      const res = await http().get('/api/auditoria?pagina=2&limite=100').set(auth(adminToken)).expect(200);
+      expect(res.body).toEqual({ registros: [expect.objectContaining({ id: 'a1', descripcion: 'Inicio de sesión fallido' })], total: 1, pagina: 2, limite: 100 });
+      expect(repo(Auditoria).findAndCount).toHaveBeenCalledWith({ where: {}, order: { secuencia: 'DESC' }, skip: 100, take: 100 });
 
       await http().get('/api/auditoria').set(auth(secretarioToken)).expect(403);
+      await http().get('/api/auditoria').expect(401);
+    });
+
+    it('GET /api/auditoria con filtros: convierte la query y valida', async () => {
+      await http().get('/api/auditoria?modulo=proyectos&soloRechazados=true&correo=%20ana%20').set(auth(adminToken)).expect(200);
+      const { where } = repo(Auditoria).findAndCount.mock.calls.at(-1)![0];
+      expect(where).toEqual([expect.objectContaining({ exito: false, ruta: expect.objectContaining({ _type: 'like', _value: '/api/proyectos%' }) })]);
+      expect(where[0].correo).toMatchObject({ _type: 'ilike', _value: '%ana%' });
+
+      for (const q of ['limite=500', 'pagina=0', 'modulo=otro', 'soloRechazados=quizas', 'desde=ayer', `correo=${'x'.repeat(101)}`]) {
+        await http().get(`/api/auditoria?${q}`).set(auth(adminToken)).expect(400);
+      }
+    });
+
+    it('GET /api/auditoria/verificar: resultado de la cadena; solo ADMIN', async () => {
+      fakeDataSource.query.mockResolvedValueOnce([{ secuencia: '3', problema: 'enlace_roto' }]).mockResolvedValueOnce([{ total: 9, secuencia: '9', hash: 'f'.repeat(64) }]);
+      const res = await http().get('/api/auditoria/verificar').set(auth(adminToken)).expect(200);
+      expect(res.body).toMatchObject({ integra: false, total: 9, ultimo: { secuencia: '9' }, problemas: [{ secuencia: '3', problema: 'enlace_roto' }] });
+
+      await http().get('/api/auditoria/verificar').set(auth(secretarioToken)).expect(403);
     });
 
     it('si falla guardar la auditoría, la petición igual responde', async () => {

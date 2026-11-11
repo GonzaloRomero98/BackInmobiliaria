@@ -9,6 +9,7 @@ import { FotoPerfil1793400000000 } from "./1793400000000-FotoPerfil";
 import { SalaVentasYVisita1793500000000 } from "./1793500000000-SalaVentasYVisita";
 import { SesionesYAuditoriaInmutable1793600000000 } from "./1793600000000-SesionesYAuditoriaInmutable";
 import { UnidadesYReservas1793700000000 } from "./1793700000000-UnidadesYReservas";
+import { AuditoriaEncadenada1793800000000 } from "./1793800000000-AuditoriaEncadenada";
 
 // Registro explícito de migraciones (en orden). Al generar una nueva con
 // `npm run migration:generate -- src/migrations/<Nombre>`, agrégala a esta lista.
@@ -23,4 +24,5 @@ export const migraciones: (new () => MigrationInterface)[] = [
     SalaVentasYVisita1793500000000,
     SesionesYAuditoriaInmutable1793600000000,
     UnidadesYReservas1793700000000,
+    AuditoriaEncadenada1793800000000,
 ];

@@ -27,6 +27,14 @@ export class PoryectoController{
         return this.proyectoService.mostrarProyectos(id_ciudad);
     }
 
+    // Declarada antes de ':id' para que "admin" no se tome como un id
+    @Get('admin')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    listarProyectosAdmin(){
+        return this.proyectoService.listarProyectosAdmin();
+    }
+
     @Get(':id')
     obtenerProyectosPorID(@Param('id', new ParseUUIDPipe) id:string){
         return this.proyectoService.obtenerProyectoPorID(id);
@@ -44,6 +52,13 @@ export class PoryectoController{
     @Roles(RolUsuario.ADMIN)
     despublicarProyecto(@Param('id', new ParseUUIDPipe) id:string){
         return this.proyectoService.despublicarProyecto(id);
+    }
+
+    @Patch(':id/publicar')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    publicarProyecto(@Param('id', new ParseUUIDPipe) id:string){
+        return this.proyectoService.publicarProyecto(id);
     }
 
     @Get(':id/entorno')

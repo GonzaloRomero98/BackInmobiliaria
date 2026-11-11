@@ -38,4 +38,15 @@ export class Auditoria{
 
     @Column({type:'jsonb', nullable:true})
     detalle:Record<string, unknown> | null;
+
+    // Cadena de hashes: los tres los asigna el trigger `auditoria_encadenar` (migración AuditoriaEncadenada).
+    // bigint llega como string desde pg.
+    @Column({type:'bigint', insert:false, update:false})
+    secuencia:string;
+
+    @Column({name:'hash_anterior', type:'varchar', length:64, nullable:true, insert:false, update:false})
+    hashAnterior:string | null;
+
+    @Column({type:'varchar', length:64, insert:false, update:false})
+    hash:string;
 }

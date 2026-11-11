@@ -3,9 +3,10 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { Solicitud } from "./entities/solicitud.entity";
-import { In, LessThan, Not, Raw, Repository } from "typeorm";
+import { In, IsNull, LessThan, Not, Raw, Repository } from "typeorm";
 import { ModeloCasa } from "../modeloCasa/entities/modeloCasa.entity";
 import { CrearSolicitudDto } from "./dto/crearSolicitud.dto";
+import { ListarSolicitudesDto } from "./dto/listarSolicitudes.dto";
 import { AuditoriaService } from "../auditoria/auditoria.service";
 import { Reserva } from "../reserva/entities/reserva.entity";
 import { ESTADOS_ACTIVOS } from "../reserva/reserva.enum";
@@ -70,8 +71,30 @@ export class SolicitudService{
         return fecha;
     }
 
+    // Todas, para el CSV
     mostrarSolicitudes(): Promise<Solicitud[]>{
         return this.solicitudRepository.find({relations:{modeloCasa:true, reservas:true},order:{creadoEn:'DESC'}})
+    }
+
+    // Bandeja paginada: el filtro va en la consulta para que cada página traiga solo lo que se ve.
+    // `pendientes` es el total sin contactar (contador de la pestaña), sin importar el filtro.
+    async listarSolicitudes({pagina, limite, filtro}:ListarSolicitudesDto){
+        const where = {
+            pendientes:{contactado:false},
+            contactados:{contactado:true},
+            visita:{visitaPreferida:Not(IsNull())},
+            todas:{},
+        }[filtro];
+        const [[solicitudes, total], pendientes] = await Promise.all([
+            this.solicitudRepository.findAndCount({
+                where, relations:{modeloCasa:true, reservas:true},
+                // id desempata las del mismo instante: sin él una fila podría repetirse o saltarse entre páginas
+                order:{creadoEn:'DESC', id:'ASC'},
+                skip:(pagina - 1) * limite, take:limite,
+            }),
+            this.solicitudRepository.count({where:{contactado:false}}),
+        ]);
+        return {solicitudes, total, pendientes, pagina, limite};
     }
 
     async obtenerSolicitud(id:string):Promise<Solicitud>{

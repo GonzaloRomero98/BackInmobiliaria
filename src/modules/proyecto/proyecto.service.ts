@@ -111,6 +111,19 @@ export class ProyectoService{
         }
     }
 
+    // Deshace el despublicar: el proyecto y sus modelos activos vuelven al catálogo
+    async publicarProyecto(id:string): Promise<void>{
+        const resultado = await this.proyectoRepository.update({id, activo:false}, {activo:true});
+        if(!resultado.affected){
+            throw new NotFoundException('El proyecto no existe o ya está publicado');
+        }
+    }
+
+    // Panel del admin: incluye los despublicados (primero los publicados) para poder volver a publicarlos
+    listarProyectosAdmin():Promise<Proyecto[]>{
+        return this.proyectoRepository.find({order:{activo:'DESC', nombre:'ASC'}});
+    }
+
     async obtenerProyectoPorID(id:string): Promise<Proyecto>{
         const proyecto = await this.proyectoRepository.findOne({where:{id,activo:true}});
         if(!proyecto){

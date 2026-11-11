@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { FindOperator, Repository } from 'typeorm';
+import { FindOperator, IsNull, Not, Repository } from 'typeorm';
 import { celdaCsv, SolicitudService } from './solicitud.service';
 import { Solicitud } from './entities/solicitud.entity';
 import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
@@ -8,7 +8,7 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { Reserva } from '../reserva/entities/reserva.entity';
 
 describe('SolicitudService', () => {
-  let solicitudRepo: { findOne: jest.Mock; find: jest.Mock; save: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
+  let solicitudRepo: { findOne: jest.Mock; find: jest.Mock; findAndCount: jest.Mock; count: jest.Mock; save: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
   let modeloRepo: { findOne: jest.Mock };
   let reservaRepo: { exists: jest.Mock; find: jest.Mock };
   let auditoria: { registrar: jest.Mock };
@@ -35,6 +35,7 @@ describe('SolicitudService', () => {
     qb.where.mockReturnValue(qb);
     solicitudRepo = {
       findOne: jest.fn(), find: jest.fn(), save: jest.fn(async (x) => x),
+      findAndCount: jest.fn(async () => [[], 0]), count: jest.fn(async () => 0),
       delete: jest.fn(), createQueryBuilder: jest.fn(() => qb),
     };
     modeloRepo = { findOne: jest.fn() };
@@ -228,12 +229,39 @@ describe('SolicitudService', () => {
       expect(correo.objectLiteralParameters).toEqual({ correo: 'J@P.cl' });
     });
 
-    it('la bandeja y el detalle traen las reservas', async () => {
+    it('la bandeja, el CSV y el detalle traen las reservas', async () => {
       solicitudRepo.findOne.mockResolvedValue({ id: 's1' });
+      await service.listarSolicitudes({ pagina: 1, limite: 20, filtro: 'todas' });
       await service.mostrarSolicitudes();
       await service.obtenerSolicitud('s1');
+      expect(solicitudRepo.findAndCount.mock.calls[0][0].relations).toMatchObject({ reservas: true });
       expect(solicitudRepo.find.mock.calls[0][0].relations).toMatchObject({ reservas: true });
       expect(solicitudRepo.findOne.mock.calls[0][0].relations).toMatchObject({ reservas: true });
+    });
+  });
+
+  describe('bandeja paginada', () => {
+    it('salta las páginas anteriores, ordena de forma estable y devuelve totales', async () => {
+      solicitudRepo.findAndCount.mockResolvedValue([[{ id: 's21' }], 45]);
+      solicitudRepo.count.mockResolvedValue(7);
+      const res = await service.listarSolicitudes({ pagina: 3, limite: 20, filtro: 'todas' });
+      expect(res).toEqual({ solicitudes: [{ id: 's21' }], total: 45, pendientes: 7, pagina: 3, limite: 20 });
+      expect(solicitudRepo.findAndCount.mock.calls[0][0]).toMatchObject({ skip: 40, take: 20, order: { creadoEn: 'DESC', id: 'ASC' }, where: {} });
+      // El contador de pendientes no depende del filtro
+      expect(solicitudRepo.count).toHaveBeenCalledWith({ where: { contactado: false } });
+    });
+
+    it.each([
+      ['pendientes', { contactado: false }],
+      ['contactados', { contactado: true }],
+    ] as const)('filtro %s va en la consulta', async (filtro, where) => {
+      await service.listarSolicitudes({ pagina: 1, limite: 20, filtro });
+      expect(solicitudRepo.findAndCount.mock.calls[0][0].where).toEqual(where);
+    });
+
+    it('filtro visita pide visitaPreferida no nula', async () => {
+      await service.listarSolicitudes({ pagina: 1, limite: 20, filtro: 'visita' });
+      expect(solicitudRepo.findAndCount.mock.calls[0][0].where).toEqual({ visitaPreferida: Not(IsNull()) });
     });
   });
 });

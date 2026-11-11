@@ -5,6 +5,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { isEmail } from "class-validator";
 import { SolicitudService } from "./solicitud.service";
 import { CrearSolicitudDto } from "./dto/crearSolicitud.dto";
+import { ListarSolicitudesDto } from "./dto/listarSolicitudes.dto";
 import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorator/rol.decorator";
@@ -26,8 +27,8 @@ export class SolicitudController{
     @ApiBearerAuth()
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
-    mostrarSolicitudes(){
-        return this.solicitudService.mostrarSolicitudes()
+    listarSolicitudes(@Query() query:ListarSolicitudesDto){
+        return this.solicitudService.listarSolicitudes(query);
     }
 
     @Get('exportar')
