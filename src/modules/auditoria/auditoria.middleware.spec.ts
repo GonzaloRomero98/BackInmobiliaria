@@ -47,7 +47,7 @@ describe('AuditoriaMiddleware', () => {
     expect(auditoria.registrar).not.toHaveBeenCalled();
   });
 
-  it.each(['/api/solicitudes', '/api/solicitudes?pagina=2', '/api/solicitudes/0f8fad5b-d9cb-469f-a165-70867728950e'])(
+  it.each(['/api/solicitudes', '/api/solicitudes?pagina=2', '/api/solicitudes/0f8fad5b-d9cb-469f-a165-70867728950e', '/api/metricas', '/api/metricas/seguimiento'])(
     'registra quién leyó datos personales: GET %s', (url) => {
       ejecutar({ method: 'GET', originalUrl: url, user: { id: 'u1', correo: 'a@x.cl', rol: 'SECRETARIO' } } as Partial<Request>, 200);
       expect(auditoria.registrar).toHaveBeenCalledWith(expect.objectContaining({ metodo: 'GET', exito: true, idUsuario: 'u1' }));
@@ -55,6 +55,11 @@ describe('AuditoriaMiddleware', () => {
 
   it('la exportación no se duplica: la registra el servicio con la cantidad exportada', () => {
     ejecutar({ method: 'GET', originalUrl: '/api/solicitudes/exportar' }, 200);
+    expect(auditoria.registrar).not.toHaveBeenCalled();
+  });
+
+  it('el resumen (solo el número de pendientes, consultado en cada navegación) no se registra', () => {
+    ejecutar({ method: 'GET', originalUrl: '/api/solicitudes/resumen' }, 200);
     expect(auditoria.registrar).not.toHaveBeenCalled();
   });
 });

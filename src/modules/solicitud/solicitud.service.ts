@@ -71,6 +71,10 @@ export class SolicitudService{
         return fecha;
     }
 
+    async resumen():Promise<{pendientes:number}>{
+        return {pendientes: await this.solicitudRepository.count({where:{contactado:false}})};
+    }
+
     // Todas, para el CSV
     mostrarSolicitudes(): Promise<Solicitud[]>{
         return this.solicitudRepository.find({relations:{modeloCasa:true, reservas:true},order:{creadoEn:'DESC'}})

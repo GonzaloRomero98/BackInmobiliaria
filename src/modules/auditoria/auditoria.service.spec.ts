@@ -53,7 +53,7 @@ describe('AuditoriaService', () => {
     it('agrega la descripción con el nombre del recurso, consultando solo los tipos presentes', async () => {
       auditoriaRepo.findAndCount.mockResolvedValue([[
         { id: 'a1', accion: 'x', metodo: 'DELETE', ruta: `/api/proyectos/${ID}`, estado: 200, exito: true, detalle: null },
-        { id: 'a2', accion: 'x', metodo: 'GET', ruta: '/api/metricas', estado: 403, exito: false, detalle: null },
+        { id: 'a2', accion: 'x', metodo: 'GET', ruta: '/api/usuarios', estado: 403, exito: false, detalle: null },
       ], 2]);
       const res = await service.listar(filtros());
       expect(res.registros.map((r) => r.descripcion)).toEqual(['Despublicó el proyecto «Los Robles»', null]);

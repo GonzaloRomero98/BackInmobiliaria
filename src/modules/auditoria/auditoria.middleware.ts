@@ -3,9 +3,10 @@ import { NextFunction, Request, Response } from "express";
 import { AuditoriaService } from "./auditoria.service";
 
 const METODOS_AUDITADOS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-// Lecturas de datos personales (Ley 21.719, ISO 27001 A.8.15): quién vio solicitudes y cuándo.
-// La exportación no entra aquí: la registra el servicio junto con la cantidad exportada.
-const LECTURA_DATOS_PERSONALES = /^\/api\/solicitudes(\/(?!exportar$)[^/]+)?$/;
+// Lecturas de datos personales (Ley 21.719, ISO 27001 A.8.15): quién vio solicitudes y cuándo, incluidos los
+// paneles de inicio del admin y de la secretaria (muestran nombres de visitas, reservas y celulares).
+// No entran: la exportación (la registra el servicio con la cantidad) ni el resumen (solo un número).
+const LECTURA_DATOS_PERSONALES = /^\/api\/(solicitudes(\/(?!(exportar|resumen)$)[^/]+)?|metricas(\/seguimiento)?)$/;
 
 // Registra toda operación que modifica datos, toda lectura de datos personales
 // y todo intento rechazado por autenticación/autorización.

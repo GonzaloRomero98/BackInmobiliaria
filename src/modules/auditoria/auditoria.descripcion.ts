@@ -57,6 +57,8 @@ const DESCRIPCIONES: Record<string, Texto> = {
     'PATCH usuarios/:id': (n) => `Editó la cuenta ${n('del usuario')}`,
 
     'POST s3/presigned-url': () => 'Pidió autorización para subir un archivo',
+    'GET metricas': () => 'Consultó el panel de inicio',
+    'GET metricas/seguimiento': () => 'Consultó el panel de seguimiento',
 };
 
 function describirLogin(estado: number | null, exito: boolean): string {

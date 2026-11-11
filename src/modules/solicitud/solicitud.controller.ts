@@ -41,8 +41,17 @@ export class SolicitudController{
         return this.solicitudService.exportarCsv(req.user);
     }
 
+    // Solo el número de pendientes (contador del menú del panel): sin datos personales, por eso no se audita
+    @Get('resumen')
+    @ApiBearerAuth()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
+    resumen(){
+        return this.solicitudService.resumen();
+    }
+
     // Para la cotización: trae el modelo aunque sea borrador o su proyecto esté despublicado.
-    // Va después de 'exportar' para que esa ruta no caiga en :id
+    // Va después de 'exportar' y 'resumen' para que esas rutas no caigan en :id
     @Get(':id')
     @ApiBearerAuth()
     @UseGuards(JwtAuthGuard, RolesGuard)

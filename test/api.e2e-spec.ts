@@ -771,17 +771,50 @@ describe('API (e2e, BD simulada)', () => {
 
   describe('métricas', () => {
     it('GET con ADMIN -> 200; SECRETARIO -> 403', async () => {
-      const qb = { innerJoin: jest.fn(), select: jest.fn(), addSelect: jest.fn(), groupBy: jest.fn(), orderBy: jest.fn(), limit: jest.fn(), getRawMany: jest.fn().mockResolvedValue([]) };
-      for (const m of ['innerJoin', 'select', 'addSelect', 'groupBy', 'orderBy', 'limit'] as const) qb[m].mockReturnValue(qb);
-      repo(Solicitud).createQueryBuilder.mockReturnValueOnce(qb);
+      const qb = { innerJoin: jest.fn(), select: jest.fn(), addSelect: jest.fn(), where: jest.fn(), groupBy: jest.fn(), addGroupBy: jest.fn(), orderBy: jest.fn(), limit: jest.fn(), getRawMany: jest.fn().mockResolvedValue([]) };
+      for (const m of ['innerJoin', 'select', 'addSelect', 'where', 'groupBy', 'addGroupBy', 'orderBy', 'limit'] as const) qb[m].mockReturnValue(qb);
+      // Dos consultas agrupadas sobre solicitudes: por semana y más consultados
+      repo(Solicitud).createQueryBuilder.mockReturnValueOnce(qb).mockReturnValueOnce(qb);
       const qbCasas = { select: jest.fn(), addSelect: jest.fn(), where: jest.fn(), getRawOne: jest.fn().mockResolvedValue({ unidades: '4', reservados: '1', vendidos: null }) };
       for (const m of ['select', 'addSelect', 'where'] as const) qbCasas[m].mockReturnValue(qbCasas);
       repo(ModeloCasa).createQueryBuilder.mockReturnValueOnce(qbCasas);
       const res = await http().get('/api/metricas').set(auth(adminToken)).expect(200);
       expect(res.body).toMatchObject({
         solicitudes: { pendientes: 0 }, modelos: { publicados: 0, unidades: 4, disponibles: 3, reservados: 1, vendidos: 0 }, masSolicitados: [],
+        reservas: { reservasMes: 0, ventasMes: 0 }, visitas: { proximos7Dias: 0, proximas: [] },
       });
+      expect(res.body.solicitudes.porSemana).toHaveLength(8);
+      // Muestra nombres de visitas: queda auditado como lectura de datos personales
+      await esperarAuditoria();
+      expect(repo(Auditoria).create).toHaveBeenCalledWith(expect.objectContaining({ accion: 'GET /api/metricas', idUsuario: 'admin-id' }));
       await http().get('/api/metricas').set(auth(secretarioToken)).expect(403);
+    });
+  });
+
+  describe('panel de seguimiento (secretaria)', () => {
+    it('GET /api/metricas/seguimiento: SECRETARIO y ADMIN; auditado como lectura de datos personales', async () => {
+      repo(Auditoria).create.mockClear();
+      const res = await http().get('/api/metricas/seguimiento').set(auth(secretarioToken)).expect(200);
+      expect(res.body).toMatchObject({
+        solicitudes: { pendientes: 0, porContactar: [] }, visitas: { proximos7Dias: 0, proximas: [] }, reservas: { enCurso: 0, porCerrar: [] },
+      });
+      await esperarAuditoria();
+      expect(repo(Auditoria).create).toHaveBeenCalledWith(expect.objectContaining({ accion: 'GET /api/metricas/seguimiento', idUsuario: 'sec-id' }));
+      await http().get('/api/metricas/seguimiento').set(auth(adminToken)).expect(200);
+      await http().get('/api/metricas/seguimiento').expect(401);
+    });
+  });
+
+  describe('resumen de solicitudes (contador del menú)', () => {
+    it('GET /api/solicitudes/resumen: solo el número, para SECRETARIO y ADMIN, sin auditar', async () => {
+      repo(Solicitud).count.mockResolvedValue(7);
+      repo(Auditoria).create.mockClear();
+      const res = await http().get('/api/solicitudes/resumen').set(auth(secretarioToken)).expect(200);
+      expect(res.body).toEqual({ pendientes: 7 });
+      await http().get('/api/solicitudes/resumen').set(auth(adminToken)).expect(200);
+      await esperarAuditoria();
+      expect(repo(Auditoria).create).not.toHaveBeenCalled();
+      await http().get('/api/solicitudes/resumen').expect(401);
     });
   });
 

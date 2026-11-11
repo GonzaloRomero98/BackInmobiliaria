@@ -56,6 +56,6 @@ describe('describirAccion', () => {
   });
 
   it('null para acciones que no están en la tabla (la vista muestra la técnica)', () => {
-    expect(describirAccion(registro('GET', '/api/metricas', { estado: 403, exito: false }), nombres)).toBeNull();
+    expect(describirAccion(registro('GET', '/api/usuarios', { estado: 403, exito: false }), nombres)).toBeNull();
   });
 });
