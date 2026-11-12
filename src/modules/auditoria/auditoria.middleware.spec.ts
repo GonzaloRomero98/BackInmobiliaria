@@ -53,6 +53,13 @@ describe('AuditoriaMiddleware', () => {
       expect(auditoria.registrar).toHaveBeenCalledWith(expect.objectContaining({ metodo: 'GET', exito: true, idUsuario: 'u1' }));
     });
 
+  it('la métrica pública de uso 3D/RA no llena la auditoría, pero sus rechazos sí se registran', () => {
+    ejecutar({ method: 'POST', originalUrl: '/api/metricas/eventos' }, 204);
+    expect(auditoria.registrar).not.toHaveBeenCalled();
+    ejecutar({ method: 'POST', originalUrl: '/api/metricas/eventos' }, 429);
+    expect(auditoria.registrar).toHaveBeenCalledWith(expect.objectContaining({ estado: 429, exito: false }));
+  });
+
   it('la exportación no se duplica: la registra el servicio con la cantidad exportada', () => {
     ejecutar({ method: 'GET', originalUrl: '/api/solicitudes/exportar' }, 200);
     expect(auditoria.registrar).not.toHaveBeenCalled();

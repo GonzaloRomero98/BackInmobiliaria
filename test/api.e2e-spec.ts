@@ -20,6 +20,7 @@ import { Reserva } from '../src/modules/reserva/entities/reserva.entity';
 import { Auditoria } from '../src/modules/auditoria/entities/auditoria.entity';
 import { NormativaProyecto } from '../src/modules/proyecto/entities/normativaProyecto.entity';
 import { EntornoService } from '../src/modules/proyecto/entorno.service';
+import { EventoModelo } from '../src/modules/metricas/entities/eventoModelo.entity';
 
 // Variables propias del test: no dependemos del .env ni de la BD/S3 reales.
 Object.assign(process.env, {
@@ -800,6 +801,17 @@ describe('API (e2e, BD simulada)', () => {
       await esperarAuditoria();
       expect(repo(Auditoria).create).toHaveBeenCalledWith(expect.objectContaining({ accion: 'GET /api/metricas', idUsuario: 'admin-id' }));
       await http().get('/api/metricas').set(auth(secretarioToken)).expect(403);
+    });
+
+    it('POST /api/metricas/eventos: público, valida el cuerpo y responde 404 si el modelo no está publicado', async () => {
+      repo(ModeloCasa).exists.mockResolvedValueOnce(true);
+      await http().post('/api/metricas/eventos').send({ id_modelo_casa: UUID, tipo: 'AR_INICIADA' }).expect(204);
+      expect(repo(EventoModelo).save).toHaveBeenCalledWith({ tipo: 'AR_INICIADA', modeloCasa: { id: UUID } });
+
+      await http().post('/api/metricas/eventos').send({ id_modelo_casa: UUID, tipo: 'OTRO' }).expect(400);
+      await http().post('/api/metricas/eventos').send({ id_modelo_casa: 'no-uuid', tipo: 'QR_ESCANEADO' }).expect(400);
+      repo(ModeloCasa).exists.mockResolvedValueOnce(false);
+      await http().post('/api/metricas/eventos').send({ id_modelo_casa: UUID, tipo: 'QR_ESCANEADO' }).expect(404);
     });
   });
 

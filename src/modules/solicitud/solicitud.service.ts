@@ -170,7 +170,7 @@ export class SolicitudService{
     }
 
     // Política de retención: los datos personales de las solicitudes se borran al cumplir el plazo
-    @Cron(CronExpression.EVERY_DAY_AT_3AM)
+    @Cron(CronExpression.EVERY_DAY_AT_3AM, {timeZone:'America/Santiago'})
     async eliminarVencidas():Promise<number>{
         const dias = Number(this.configService.get('SOLICITUD_RETENCION_DIAS') ?? RETENCION_DIAS_POR_DEFECTO);
         const limite = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);

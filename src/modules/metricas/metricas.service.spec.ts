@@ -4,6 +4,7 @@ import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
 import { Solicitud } from '../solicitud/entities/solicitud.entity';
 import { Proyecto } from '../proyecto/entities/proyecto.entity';
 import { Reserva } from '../reserva/entities/reserva.entity';
+import { EventoModelo, TipoEventoModelo } from './entities/eventoModelo.entity';
 
 // Jueves 12 de noviembre de 2026, 15:00 (hora local); su semana empieza el lunes 9
 const AHORA = new Date(2026, 10, 12, 15, 0);
@@ -33,7 +34,15 @@ describe('MetricasService', () => {
       // El orden de las llamadas es el del Promise.all: primero por semana, luego más consultados
       createQueryBuilder: jest.fn().mockReturnValueOnce(qbSemanas).mockReturnValueOnce(qbTop),
     };
-    const modelos = { count: jest.fn(async ({ where }) => (where.activo === false ? 3 : 4)), createQueryBuilder: jest.fn(() => qbUnidades) };
+    const modelos = {
+      count: jest.fn(async ({ where }) => (where.activo === false ? 3 : 4)),
+      createQueryBuilder: jest.fn(() => qbUnidades),
+      exists: jest.fn(async ({ where }) => where.id === 'publicado'),
+    };
+    const eventos = {
+      count: jest.fn(async ({ where }) => (where.tipo === TipoEventoModelo.QR_ESCANEADO ? 9 : 4)),
+      save: jest.fn(),
+    };
     const proyectos = { count: jest.fn().mockResolvedValue(5) };
     const reservas = {
       count: jest.fn(async ({ where }) => (where.estado ? 1 : 6)),
@@ -43,12 +52,13 @@ describe('MetricasService', () => {
     };
 
     return {
-      qbUnidades, qbSemanas, solicitudes, reservas,
+      qbUnidades, qbSemanas, solicitudes, reservas, modelos, eventos,
       service: new MetricasService(
         modelos as unknown as Repository<ModeloCasa>,
         solicitudes as unknown as Repository<Solicitud>,
         proyectos as unknown as Repository<Proyecto>,
         reservas as unknown as Repository<Reserva>,
+        eventos as unknown as Repository<EventoModelo>,
       ),
     };
   }
@@ -63,8 +73,32 @@ describe('MetricasService', () => {
       proyectosActivos: 5,
       reservas: { reservasMes: 6, ventasMes: 1 },
       masSolicitados: [{ id: 'm1', nombreModelo: 'Casa A', proyecto: 'Los Robles', solicitudes: 7 }],
+      experiencia3d: { escaneosQr: 9, sesionesAr: 4 },
     });
     expect(qbUnidades.where).toHaveBeenCalledWith('m.activo = true');
+  });
+
+  it('experiencia 3D: cuenta escaneos de QR y sesiones de RA de los últimos 30 días', async () => {
+    const { service, eventos } = servicio({ unidades: '0', reservados: '0', vendidos: '0' });
+    await service.resumen(AHORA);
+    const hace30Dias = new Date(AHORA.getTime() - 30 * 24 * 60 * 60 * 1000);
+    for (const tipo of [TipoEventoModelo.QR_ESCANEADO, TipoEventoModelo.AR_INICIADA]) {
+      expect(eventos.count).toHaveBeenCalledWith({ where: { tipo, creadoEn: expect.objectContaining({ _value: hace30Dias }) } });
+    }
+  });
+
+  it('registrarEvento guarda el evento de un modelo publicado', async () => {
+    const { service, eventos, modelos } = servicio({ unidades: '0', reservados: '0', vendidos: '0' });
+    await service.registrarEvento({ id_modelo_casa: 'publicado', tipo: TipoEventoModelo.AR_INICIADA });
+    expect(modelos.exists).toHaveBeenCalledWith({ where: { id: 'publicado', activo: true } });
+    expect(eventos.save).toHaveBeenCalledWith({ tipo: 'AR_INICIADA', modeloCasa: { id: 'publicado' } });
+  });
+
+  it('registrarEvento de un modelo inexistente o en borrador: 404 y no guarda', async () => {
+    const { service, eventos } = servicio({ unidades: '0', reservados: '0', vendidos: '0' });
+    await expect(service.registrarEvento({ id_modelo_casa: 'borrador', tipo: TipoEventoModelo.QR_ESCANEADO }))
+      .rejects.toThrow('Modelo no encontrado');
+    expect(eventos.save).not.toHaveBeenCalled();
   });
 
   it('próximas visitas: hasta 5 en los próximos 7 días, con el total', async () => {

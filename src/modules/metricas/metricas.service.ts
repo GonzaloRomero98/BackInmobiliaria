@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { And, LessThan, MoreThanOrEqual, Repository } from "typeorm";
 import { ModeloCasa } from "../modeloCasa/entities/modeloCasa.entity";
@@ -6,6 +6,8 @@ import { Solicitud } from "../solicitud/entities/solicitud.entity";
 import { Proyecto } from "../proyecto/entities/proyecto.entity";
 import { Reserva } from "../reserva/entities/reserva.entity";
 import { EstadoReserva } from "../reserva/reserva.enum";
+import { EventoModelo, TipoEventoModelo } from "./entities/eventoModelo.entity";
+import { RegistrarEventoDto } from "./dto/registrarEvento.dto";
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 export const SEMANAS_GRAFICO = 8;
@@ -31,7 +33,17 @@ export class MetricasService{
         private readonly proyectoRepository: Repository<Proyecto>,
         @InjectRepository(Reserva)
         private readonly reservaRepository: Repository<Reserva>,
+        @InjectRepository(EventoModelo)
+        private readonly eventoRepository: Repository<EventoModelo>,
     ){}
+
+    // Solo modelos publicados: un id inventado o de un borrador no suma a la métrica
+    async registrarEvento({id_modelo_casa, tipo}:RegistrarEventoDto):Promise<void>{
+        if(!(await this.modeloCasaRepository.exists({where:{id:id_modelo_casa, activo:true}}))){
+            throw new NotFoundException('Modelo no encontrado');
+        }
+        await this.eventoRepository.save({tipo, modeloCasa:{id:id_modelo_casa}});
+    }
 
     async resumen(ahora = new Date()){
         const hace30Dias = new Date(ahora.getTime() - 30 * DIA_MS);
@@ -41,7 +53,7 @@ export class MetricasService{
         primeraSemana.setDate(primeraSemana.getDate() - 7 * (SEMANAS_GRAFICO - 1));
 
         const [total, pendientes, ultimos30Dias, previos30Dias, publicados, borradores, casas, proyectosActivos,
-            reservasMes, ventasMes, visitas, porSemana, masSolicitados] = await Promise.all([
+            reservasMes, ventasMes, visitas, porSemana, masSolicitados, escaneosQr, sesionesAr] = await Promise.all([
             this.solicitudRepository.count(),
             this.solicitudRepository.count({where:{contactado:false}}),
             this.solicitudRepository.count({where:{creadoEn:MoreThanOrEqual(hace30Dias)}}),
@@ -79,6 +91,8 @@ export class MetricasService{
                 .orderBy('solicitudes', 'DESC')
                 .limit(5)
                 .getRawMany<{id:string, nombreModelo:string, proyecto:string, solicitudes:string}>(),
+            this.eventoRepository.count({where:{tipo:TipoEventoModelo.QR_ESCANEADO, creadoEn:MoreThanOrEqual(hace30Dias)}}),
+            this.eventoRepository.count({where:{tipo:TipoEventoModelo.AR_INICIADA, creadoEn:MoreThanOrEqual(hace30Dias)}}),
         ]);
 
         // SUM llega como string, o null si no hay modelos
@@ -103,6 +117,7 @@ export class MetricasService{
             visitas,
             // COUNT llega como string desde Postgres
             masSolicitados: masSolicitados.map((m) => ({...m, solicitudes: Number(m.solicitudes)})),
+            experiencia3d: {escaneosQr, sesionesAr},
         };
     }
 

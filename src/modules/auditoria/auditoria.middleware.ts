@@ -7,6 +7,8 @@ const METODOS_AUDITADOS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 // paneles de inicio del admin y de la secretaria (muestran nombres de visitas, reservas y celulares).
 // No entran: la exportación (la registra el servicio con la cantidad) ni el resumen (solo un número).
 const LECTURA_DATOS_PERSONALES = /^\/api\/(solicitudes(\/(?!(exportar|resumen)$)[^/]+)?|metricas(\/seguimiento)?)$/;
+// Métrica anónima de uso 3D/RA: cada visita llenaría la auditoría; solo se registran sus rechazos (p. ej. 429)
+const RUTA_EVENTOS = '/api/metricas/eventos';
 
 // Registra toda operación que modifica datos, toda lectura de datos personales
 // y todo intento rechazado por autenticación/autorización.
@@ -21,6 +23,9 @@ export class AuditoriaMiddleware implements NestMiddleware{
             const ruta = req.originalUrl.split('?')[0];
             const lecturaPersonal = req.method === 'GET' && LECTURA_DATOS_PERSONALES.test(ruta);
             if(!METODOS_AUDITADOS.has(req.method) && ![401, 403, 429].includes(estado) && !lecturaPersonal){
+                return;
+            }
+            if(ruta === RUTA_EVENTOS && estado < 400){
                 return;
             }
 

@@ -1,4 +1,6 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
+import { RegistrarEventoDto } from "./dto/registrarEvento.dto";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { MetricasService } from "./metricas.service";
 import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
@@ -17,6 +19,14 @@ export class MetricasController{
     @Roles(RolUsuario.ADMIN)
     resumen(){
         return this.metricasService.resumen();
+    }
+
+    // Público (lo llama la web al escanear el QR o abrir la RA); el límite por IP evita inflar la métrica
+    @Post('eventos')
+    @HttpCode(204)
+    @Throttle({default:{limit:20, ttl:60_000}})
+    registrarEvento(@Body() dto:RegistrarEventoDto){
+        return this.metricasService.registrarEvento(dto);
     }
 
     @Get('seguimiento')
