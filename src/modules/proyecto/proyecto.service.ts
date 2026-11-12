@@ -1,13 +1,16 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Proyecto } from "./entities/proyecto.entity";
-import { Repository } from "typeorm";
+import { IsNull, Not, Repository } from "typeorm";
 import { Ciudad } from "../ubicacion/entities/ciudad.entity";
 import { CrearProyectoDto } from "./dto/crearProyecto.dto";
 import { ActualizarProyectoDto } from "./dto/actualizarProyecto.dto";
 import { NormativaProyecto } from "./entities/normativaProyecto.entity";
 import { NormativaDto } from "./dto/normativa.dto";
-import { Entorno, EntornoService } from "./entorno.service";
+import { distanciaMetros, Entorno, EntornoService } from "./entorno.service";
+
+// Otro proyecto a menos de esto casi siempre es un duplicado o un clic equivocado en el mapa
+export const DISTANCIA_DUPLICADO_M = 50;
 
 @Injectable()
 export class ProyectoService{
@@ -25,6 +28,7 @@ export class ProyectoService{
 
     async crearProyecto(crearPoroyectoDto: CrearProyectoDto): Promise<Proyecto>{
         const ciudad = await this.buscarCiudad(crearPoroyectoDto.id_ciudad);
+        await this.exigirConfirmacionSiDuplicado(crearPoroyectoDto.latitud, crearPoroyectoDto.longitud, crearPoroyectoDto.confirmarCercania);
         const proyecto = this.proyectoRepository.create({
             nombre: crearPoroyectoDto.nombre,
             descripcion: crearPoroyectoDto.descripcion ?? '',
@@ -48,12 +52,15 @@ export class ProyectoService{
 
     async actualizarProyecto(id:string, actualizarProyectoDto: ActualizarProyectoDto): Promise<Proyecto>{
         const proyecto = await this.obtenerProyectoPorID(id);
-        const {id_ciudad, ...cambios} = actualizarProyectoDto;
+        const {id_ciudad, confirmarCercania, ...cambios} = actualizarProyectoDto;
         if(id_ciudad !== undefined){
             proyecto.ciudad = await this.buscarCiudad(id_ciudad);
         }
         const cambiaUbicacion = (cambios.latitud !== undefined && cambios.latitud !== proyecto.latitud)
             || (cambios.longitud !== undefined && cambios.longitud !== proyecto.longitud);
+        if(cambiaUbicacion){
+            await this.exigirConfirmacionSiDuplicado(cambios.latitud ?? proyecto.latitud, cambios.longitud ?? proyecto.longitud, confirmarCercania, id);
+        }
         Object.assign(proyecto, cambios);
         if(cambiaUbicacion){
             // El entorno guardado ya no corresponde a la nueva ubicación
@@ -87,6 +94,33 @@ export class ProyectoService{
         const actualizadoEn = new Date();
         await this.proyectoRepository.update({id}, {entorno, entornoActualizadoEn:actualizadoEn});
         return {entorno, actualizadoEn};
+    }
+
+    // Se avisa, no se bloquea: dos proyectos casi en el mismo punto pueden ser legítimos (p. ej. etapas en el mismo
+    // terreno). Sin `confirmarCercania` responde 409 con los proyectos cercanos, para que el admin decida.
+    // Cuenta también los despublicados: suele ser el mismo proyecto creado de nuevo.
+    // shortcut: compara en memoria contra todos los proyectos con ubicación; con miles, filtrar por un recuadro en la consulta
+    private async exigirConfirmacionSiDuplicado(latitud:number | null | undefined, longitud:number | null | undefined, confirmado?:boolean, excluirId?:string){
+        if(latitud == null || longitud == null || confirmado) return;
+        const otros = await this.proyectoRepository.find({
+            where:{latitud:Not(IsNull()), longitud:Not(IsNull())},
+            select:{id:true, nombre:true, activo:true, latitud:true, longitud:true},
+            loadEagerRelations:false,
+        });
+        const cercanos = otros
+            .filter((p) => p.id !== excluirId)
+            .map((p) => ({id:p.id, nombre:p.nombre, activo:p.activo, distancia:Math.round(distanciaMetros(latitud, longitud, Number(p.latitud), Number(p.longitud)))}))
+            .filter((p) => p.distancia < DISTANCIA_DUPLICADO_M)
+            .sort((a, b) => a.distancia - b.distancia);
+        if(cercanos.length > 0){
+            const [primero] = cercanos;
+            throw new ConflictException({
+                statusCode:409,
+                error:'Conflict',
+                message:`El punto está a ${primero.distancia} m del proyecto «${primero.nombre}»${primero.activo ? '' : ' (despublicado)'}. Si es otro proyecto en el mismo lugar, confirma para guardar.`,
+                cercanos,
+            });
+        }
     }
 
     private recalcularEntornoEnSegundoPlano(proyecto:Proyecto){

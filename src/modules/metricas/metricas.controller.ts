@@ -19,7 +19,6 @@ export class MetricasController{
         return this.metricasService.resumen();
     }
 
-    // Inicio del panel de la secretaria (el ADMIN también puede verlo)
     @Get('seguimiento')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)

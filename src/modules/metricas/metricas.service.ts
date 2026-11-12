@@ -112,7 +112,6 @@ export class MetricasService{
         const inicioDia = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
         const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
         const [[porContactar, pendientes], nuevasHoy, nuevasSemana, visitas, [reservas, reservasEnCurso], ventasMes] = await Promise.all([
-            // Las que más llevan esperando, primero
             this.solicitudRepository.findAndCount({
                 where:{contactado:false}, relations:{modeloCasa:{proyecto:true}}, order:{creadoEn:'ASC'}, take:5,
             }),

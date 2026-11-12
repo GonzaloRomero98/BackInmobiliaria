@@ -20,7 +20,6 @@ export class AuditoriaController{
         return this.auditoriaService.listar(filtros);
     }
 
-    // Recalcula la cadena de hashes completa y devuelve dónde se rompe, si se rompe
     @Get('verificar')
     verificar(){
         return this.auditoriaService.verificar();

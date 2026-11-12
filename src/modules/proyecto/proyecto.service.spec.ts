@@ -1,5 +1,5 @@
 import { EtapaProyecto } from './proyecto.enum';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ProyectoService } from './proyecto.service';
 import { Proyecto } from './entities/proyecto.entity';
@@ -19,7 +19,7 @@ describe('ProyectoService', () => {
 
   beforeEach(() => {
     proyectoRepo = {
-      findOne: jest.fn(), find: jest.fn(), create: jest.fn((x) => x), save: jest.fn(async (x) => ({ id: 'p1', ...x })),
+      findOne: jest.fn(), find: jest.fn(async () => []), create: jest.fn((x) => x), save: jest.fn(async (x) => ({ id: 'p1', ...x })),
       update: jest.fn(),
     };
     entornoService = { calcular: jest.fn().mockResolvedValue({ radio: 1000, lugares: [], resumen: {} }) };
@@ -69,6 +69,61 @@ describe('ProyectoService', () => {
   it('obtenerProyectoPorID 404 si no existe', async () => {
     proyectoRepo.findOne.mockResolvedValue(null);
     await expect(service.obtenerProyectoPorID('x')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  describe('proyectos casi en el mismo punto (< 50 m)', () => {
+    // Plaza de Arica; 0.0001° de latitud ≈ 11 m, 0.003° ≈ 334 m
+    const OTRO = { id: 'otro', nombre: 'Los Robles', activo: true, latitud: -18.4783, longitud: -70.3126 };
+    const base = { nombre: 'Nuevo', id_ciudad: 3, imagenPortada: 'x' };
+    beforeEach(() => {
+      ciudadRepo.findOne.mockResolvedValue({ id: 3 });
+      proyectoRepo.find.mockResolvedValue([OTRO]);
+    });
+
+    it('crear a 11 m de otro proyecto sin confirmar -> 409 con el proyecto y la distancia; no guarda', async () => {
+      const error = await service.crearProyecto({ ...base, latitud: -18.4784, longitud: -70.3126 }).catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({
+        message: expect.stringContaining('11 m del proyecto «Los Robles»'),
+        cercanos: [{ id: 'otro', nombre: 'Los Robles', activo: true, distancia: 11 }],
+      });
+      expect(proyectoRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('con confirmarCercania se guarda, y el campo no llega a la entidad', async () => {
+      await service.crearProyecto({ ...base, latitud: -18.4784, longitud: -70.3126, confirmarCercania: true });
+      expect(proyectoRepo.save).toHaveBeenCalled();
+      expect(proyectoRepo.save.mock.calls[0][0]).not.toHaveProperty('confirmarCercania');
+    });
+
+    it('a 334 m (dentro de 1 km pero no un duplicado) se guarda sin preguntar; sin ubicación no consulta', async () => {
+      await service.crearProyecto({ ...base, latitud: -18.4813, longitud: -70.3126 });
+      expect(proyectoRepo.save).toHaveBeenCalledTimes(1);
+      proyectoRepo.find.mockClear();
+      await service.crearProyecto(base);
+      expect(proyectoRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('un despublicado también cuenta y el mensaje lo dice', async () => {
+      proyectoRepo.find.mockResolvedValue([{ ...OTRO, activo: false }]);
+      await expect(service.crearProyecto({ ...base, latitud: -18.4783, longitud: -70.3126 }))
+        .rejects.toThrow('del proyecto «Los Robles» (despublicado)');
+    });
+
+    it('editar: se compara contra los demás (no contra sí mismo) y solo si cambia la ubicación', async () => {
+      proyectoRepo.findOne.mockResolvedValue({ id: 'p1', latitud: -18.49, longitud: -70.30, ciudad: { id: 3 } });
+      proyectoRepo.find.mockResolvedValue([OTRO, { id: 'p1', nombre: 'Yo mismo', activo: true, latitud: -18.4783, longitud: -70.3126 }]);
+      const error = await service.actualizarProyecto('p1', { latitud: -18.4783, longitud: -70.3126 }).catch((e) => e);
+      expect(error.getResponse().cercanos.map((c: { id: string }) => c.id)).toEqual(['otro']);
+
+      await service.actualizarProyecto('p1', { latitud: -18.4783, longitud: -70.3126, confirmarCercania: true });
+      expect(proyectoRepo.save.mock.calls.at(-1)![0]).not.toHaveProperty('confirmarCercania');
+
+      proyectoRepo.find.mockClear();
+      proyectoRepo.findOne.mockResolvedValue({ id: 'p1', latitud: -18.4783, longitud: -70.3126, ciudad: { id: 3 } });
+      await service.actualizarProyecto('p1', { nombre: 'Otro nombre', latitud: -18.4783, longitud: -70.3126 });
+      expect(proyectoRepo.find).not.toHaveBeenCalled();
+    });
   });
 
   describe('actualizarProyecto', () => {

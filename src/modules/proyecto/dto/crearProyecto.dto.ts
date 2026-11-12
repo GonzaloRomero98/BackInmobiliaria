@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Matches, Max, MaxLength, Min } from "class-validator";
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Matches, Max, MaxLength, Min } from "class-validator";
 import { EtapaProyecto } from "../proyecto.enum";
 
 export class CrearProyectoDto{
@@ -71,4 +71,9 @@ export class CrearProyectoDto{
     @Min(-180)
     @Max(180)
     salaLongitud?:number | null;
+
+    // Confirma guardar aunque haya otro proyecto a menos de 50 m (sin esto se responde 409). No se guarda.
+    @IsOptional()
+    @IsBoolean()
+    confirmarCercania?:boolean;
 }

@@ -351,6 +351,18 @@ describe('API (e2e, BD simulada)', () => {
         .send({ nombre: 'P', id_ciudad: 1, imagenPortada: 'https://x/p.jpg' }).expect(201);
     });
 
+    it('crear a menos de 50 m de otro proyecto: 409 con los cercanos; con confirmarCercania -> 201; confirmarCercania no booleano -> 400', async () => {
+      repo(Ciudad).findOne.mockResolvedValue({ id: 1 });
+      repo(Proyecto).find.mockResolvedValue([{ id: 'otro', nombre: 'Los Robles', activo: true, latitud: -35.4264, longitud: -71.6554 }]);
+      const cuerpo = { nombre: 'P', id_ciudad: 1, imagenPortada: 'https://x/p.jpg', latitud: -35.4265, longitud: -71.6554 };
+      const res = await http().post('/api/proyectos').set(auth(adminToken)).send(cuerpo).expect(409);
+      expect(res.body).toMatchObject({ statusCode: 409, cercanos: [{ id: 'otro', nombre: 'Los Robles', distancia: 11 }] });
+      expect(res.body.message).toContain('«Los Robles»');
+
+      await http().post('/api/proyectos').set(auth(adminToken)).send({ ...cuerpo, confirmarCercania: true }).expect(201);
+      await http().post('/api/proyectos').set(auth(adminToken)).send({ ...cuerpo, confirmarCercania: 'si' }).expect(400);
+    });
+
     it('PATCH ubicación con ADMIN -> 200; coordenadas fuera de rango -> 400', async () => {
       repo(Proyecto).findOne.mockResolvedValue({ id: UUID, ciudad: { id: 1 } });
       const res = await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken))
