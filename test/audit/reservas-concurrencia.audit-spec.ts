@@ -128,6 +128,26 @@ describe('RF-11 Reservas (PostgreSQL real)', () => {
   });
 });
 
+describe('Borrado diario de la auditoría (PostgreSQL real)', () => {
+  it('vacía la tabla, la cadena reinicia íntegra y el bloqueo de DELETE/TRUNCATE sigue activo después', async () => {
+    const auditoria = new AuditoriaService(ds.getRepository(Auditoria), ds.getRepository(Proyecto),
+      ds.getRepository(ModeloCasa), ds.getRepository(Usuario), ds);
+    for (let i = 0; i < 3; i++) await auditoria.registrar({ accion: `PRUEBA_${i}`, exito: true });
+    process.env.AUDITORIA_BORRADO_DIARIO = 'true';
+    try {
+      expect(await auditoria.borradoDiario()).toBeGreaterThanOrEqual(3);
+    } finally {
+      delete process.env.AUDITORIA_BORRADO_DIARIO;
+    }
+    const filas = await ds.getRepository(Auditoria).find();
+    expect(filas).toHaveLength(1);
+    expect(filas[0]).toMatchObject({ accion: 'BORRADO_DIARIO_AUDITORIA', secuencia: '1' });
+    expect((await auditoria.verificar()).integra).toBe(true);
+    await expect(ds.query('DELETE FROM auditoria')).rejects.toThrow('solo inserción');
+    await expect(ds.query('TRUNCATE auditoria')).rejects.toThrow('solo inserción');
+  });
+});
+
 describe('RF-14 Privacidad y retención (PostgreSQL real)', () => {
   it('supresión por correo sin distinguir mayúsculas; 409 con reserva activa; vuelve a ser eliminable al anular', async () => {
     const modelo = await crearModelo(3);
