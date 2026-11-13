@@ -3,12 +3,14 @@ import { ConfigService } from "@nestjs/config";
 import {PassportStrategy} from '@nestjs/passport'
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { UsuarioService } from "../../usuario/usuario.service";
+import { tokenDeCookie } from "../cookie-sesion";
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy){
 
     constructor(configService: ConfigService, private readonly usuarioService: UsuarioService){
         super({
-            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+            // Cookie HttpOnly del navegador; Bearer para Swagger y los tests
+            jwtFromRequest: ExtractJwt.fromExtractors([tokenDeCookie, ExtractJwt.fromAuthHeaderAsBearerToken()]),
             ignoreExpiration: false,
             secretOrKey: configService.getOrThrow<string>('JWT_SECRET')
         });

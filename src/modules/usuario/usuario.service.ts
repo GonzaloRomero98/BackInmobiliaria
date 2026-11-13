@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Usuario } from "./entities/usuario.entity";
-import { Not, Repository } from "typeorm";
+import { Not, Raw, Repository } from "typeorm";
 import { CrearUsuarioDto } from "./dto/crearUsuario.dto";
 import { ActualizarUsuarioDto } from "./dto/actualizarUsuario.dto";
 import { CambiarContrasenaDto } from "./dto/cambiarContrasena.dto";
@@ -28,8 +28,9 @@ export class UsuarioService{
 
 
     async crearUsuario(usuarioDto: CrearUsuarioDto):Promise<Usuario>{
+        // "Ana@x.cl" y "ana@x.cl" son el mismo correo: comparación exacta sin distinguir mayúsculas (sin LIKE)
         const existe = await this.usarioRepositorio.findOne({
-            where:{ correo:usuarioDto.correo},
+            where:{ correo:Raw((columna) => `LOWER(${columna}) = LOWER(:correo)`, {correo:usuarioDto.correo})},
         });
         if(existe){
             throw new ConflictException('Ya existe un  usuario para este correo');

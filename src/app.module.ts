@@ -21,6 +21,7 @@ import { AuditoriaMiddleware } from "./modules/auditoria/auditoria.middleware";
 import { EstadoBaseDatosModule } from "./modules/estadoBaseDatos/estado-base-datos.module";
 import { MetricasModule } from "./modules/metricas/metricas.module";
 import { opcionesBaseDatos } from "./database/opciones-bd";
+import { esLecturaSsr } from "./limite-ssr";
 
 @Module({
   imports: [
@@ -33,8 +34,12 @@ import { opcionesBaseDatos } from "./database/opciones-bd";
       useFactory: (config: ConfigService) =>
         opcionesBaseDatos((clave) => config.get<string>(clave)),
     }),
-    // Límite general por IP; login y formulario público tienen límites más estrictos
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Límite general por IP; login y formulario público tienen límites más estrictos.
+    // Las lecturas del SSR de Next quedan fuera (ver limite-ssr.ts)
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+      skipIf: (contexto) => esLecturaSsr(contexto.switchToHttp().getRequest()),
+    }),
     ScheduleModule.forRoot(),
     AuditoriaModule,
     EstadoBaseDatosModule,

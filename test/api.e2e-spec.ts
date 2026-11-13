@@ -32,6 +32,7 @@ Object.assign(process.env, {
   CORS_ORIGINS: 'http://localhost:3000,https://inmocap.cl',
   DB_SSL: 'false',
   SWAGGER: 'true',
+  SSR_CLAVE: 'clave-ssr-test',
 });
 delete process.env.AWS_SESSION_TOKEN;
 
@@ -179,6 +180,21 @@ describe('API (e2e, BD simulada)', () => {
     });
   });
 
+  describe('límite de peticiones y SSR', () => {
+    it('los GET del SSR (con SSR_CLAVE) no gastan el límite por IP; sin la clave, la 101.ª da 429', async () => {
+      for (let i = 0; i < 101; i++) await http().get('/api').set('x-ssr-clave', 'clave-ssr-test').expect(200);
+      for (let i = 0; i < 100; i++) await http().get('/api').set('x-ssr-clave', 'otra-clave-ssr').expect(200);
+      await http().get('/api').expect(429);
+    });
+
+    it('la clave no salta el límite del login', async () => {
+      for (let i = 0; i < 5; i++) {
+        await http().post('/api/auth/login').set('x-ssr-clave', 'clave-ssr-test').send({ correo: `ssr${i}@a.cl`, contrasena: 'x' }).expect(401);
+      }
+      await http().post('/api/auth/login').set('x-ssr-clave', 'clave-ssr-test').send({ correo: 'ssr5@a.cl', contrasena: 'x' }).expect(429);
+    });
+  });
+
   describe('estado de la base de datos y documentación', () => {
     it('GET /api/health -> 200 con la BD conectada', async () => {
       const res = await http().get('/api/health').expect(200);
@@ -248,13 +264,25 @@ describe('API (e2e, BD simulada)', () => {
 
       expect(res.body.usuario).toEqual({ id: 'admin-id', correo: 'admin@x.cl', rol: 'ADMIN' });
       expect(res.body.usuario.contrasena).toBeUndefined();
+      // El token solo viaja en la cookie HttpOnly, nunca en el cuerpo
+      expect(res.body).not.toHaveProperty('access_token');
+      const cookie = res.headers['set-cookie'] as unknown as string[];
+      expect(cookie[0]).toMatch(/^auth_token=[\w-]+\.[\w-]+\.[\w-]+;/);
+      expect(cookie[0]).toMatch(/HttpOnly/);
+      expect(cookie[0]).toMatch(/Secure/);
+      expect(cookie[0]).toMatch(/SameSite=Strict/);
 
       repo(Ciudad).findOne.mockResolvedValue({ id: 1, nombre: 'Temuco' });
       await http()
         .post('/api/proyectos')
-        .set(auth(res.body.access_token))
+        .set('Cookie', cookie)
         .send({ nombre: 'P', id_ciudad: 1, descripcion: 'd', imagenPortada: 'https://x/p.jpg' })
         .expect(201);
+    });
+
+    it('logout borra la cookie de sesión, incluso sin sesión válida', async () => {
+      const res = await http().post('/api/auth/logout').expect(204);
+      expect((res.headers['set-cookie'] as unknown as string[])[0]).toMatch(/^auth_token=;.*Expires=Thu, 01 Jan 1970/);
     });
 
     const nuevoUsuario = { correo: 'n@x.cl', contrasena: 'Inmocap2026', nombre: 'N', rol: 'ADMIN' };
@@ -762,15 +790,17 @@ describe('API (e2e, BD simulada)', () => {
       repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], contrasena: hash }));
       await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Mala1234567', nueva: 'Nueva123456' }).expect(400);
       await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Actual12345', nueva: 'debil' }).expect(400);
-      await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Actual12345', nueva: 'Nueva123456' }).expect(200);
+      await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken)).send({ actual: 'Actual12345', nueva: 'Nueva123456' }).expect(204);
       expect(repo(Usuario).save).toHaveBeenCalledWith(expect.objectContaining({ id: 'sec-id' }));
     });
 
-    it('PATCH me/contrasena devuelve un token nuevo y los tokens anteriores al cambio dejan de servir', async () => {
+    it('PATCH me/contrasena pone un token nuevo en la cookie y los tokens anteriores al cambio dejan de servir', async () => {
       const hash = await bcrypt.hash('Actual12345', 4);
       repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], contrasena: hash }));
       const res = await http().patch('/api/usuarios/me/contrasena').set(auth(secretarioToken))
-        .send({ actual: 'Actual12345', nueva: 'Nueva123456' }).expect(200);
+        .send({ actual: 'Actual12345', nueva: 'Nueva123456' }).expect(204);
+      const cookie = res.headers['set-cookie'] as unknown as string[];
+      expect(cookie[0]).toMatch(/^auth_token=.+HttpOnly/);
       const cambiadaEn: Date = repo(Usuario).save.mock.calls.at(-1)![0].contrasenaCambiadaEn;
       expect(cambiadaEn).toBeInstanceOf(Date);
 
@@ -778,7 +808,7 @@ describe('API (e2e, BD simulada)', () => {
       repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], contrasenaCambiadaEn: cambiadaEn }));
       const anterior = app.get(JwtService).sign({ sub: 'sec-id', correo: 'sec@x.cl', rol: 'SECRETARIO', iat: Math.floor(cambiadaEn.getTime() / 1000) - 60 });
       await http().get('/api/solicitudes').set(auth(anterior)).expect(401);
-      await http().get('/api/solicitudes').set(auth(res.body.access_token)).expect(200);
+      await http().get('/api/solicitudes').set('Cookie', cookie).expect(200);
     });
   });
 
@@ -902,6 +932,7 @@ describe('API (e2e, BD simulada)', () => {
       ['con celular corto', { celular: '1234' }],
       ['con celular fijo', { celular: '+56 2 2345 6789' }],
       ['con celular extranjero', { celular: '+54 9 11 2345 6789' }],
+      ['con mensaje de más de 2000 caracteres', { mensaje: 'x'.repeat(2001) }],
     ])('POST %s -> 400', async (_caso, cambio) => {
       repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID });
       await http().post('/api/solicitudes').send({ ...body, ...cambio }).expect(400);

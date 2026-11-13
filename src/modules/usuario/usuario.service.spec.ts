@@ -103,6 +103,14 @@ describe('UsuarioService', () => {
     await expect(service.crearUsuario(dto)).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('busca el duplicado sin distinguir mayúsculas y sin LIKE', async () => {
+    repo.findOne.mockResolvedValue({ id: 'existente' });
+    await expect(service.crearUsuario({ ...dto, correo: 'Ana@X.cl' })).rejects.toBeInstanceOf(ConflictException);
+    const { correo } = repo.findOne.mock.calls[0][0].where;
+    expect(correo.getSql('correo')).toBe('LOWER(correo) = LOWER(:correo)');
+    expect(correo.objectLiteralParameters).toEqual({ correo: 'Ana@X.cl' });
+  });
+
   it('rechaza si el rol no existe en la BD', async () => {
     repo.findOne.mockResolvedValue(null);
     rolService.ObtenerRolByNombre.mockResolvedValue(null);

@@ -15,7 +15,8 @@ export function configurarApp(app: INestApplication) {
     .split(',')
     .map((origen) => origen.trim())
     .filter(Boolean);
-  app.enableCors({ origin: origenes });
+  // credentials: en desarrollo el front (:3000) y la API (:3001) son orígenes distintos y la cookie de sesión debe viajar
+  app.enableCors({ origin: origenes, credentials: true });
 
   // Detrás de un proxy/balanceador (p. ej. ALB o Nginx) para que req.ip sea la IP real del cliente
   const trustProxy = config.get<string>('TRUST_PROXY');

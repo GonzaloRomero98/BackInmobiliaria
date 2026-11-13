@@ -28,8 +28,10 @@ export class CrearSolicitudDto{
     @Matches(/^\+569\d{8}$/, {message:'El celular debe ser un móvil chileno: +56 9 XXXX XXXX'})
     celular:string;
 
+    // Formulario público: sin tope, un bot podría guardar ~100 KB por solicitud
     @IsOptional()
     @IsString()
+    @MaxLength(2000)
     mensaje?:string;
     
     @IsUUID()

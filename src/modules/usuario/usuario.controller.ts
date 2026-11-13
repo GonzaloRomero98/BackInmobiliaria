@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Request } from "express";
+import type { Request, Response } from "express";
+import { ponerCookieSesion } from "../auth/cookie-sesion";
 import { sinContrasena, UsuarioService } from "./usuario.service";
 import { CrearUsuarioDto } from "./dto/crearUsuario.dto";
 import { ActualizarUsuarioDto } from "./dto/actualizarUsuario.dto";
@@ -49,10 +50,11 @@ export class UsuarioController{
     // Cualquier usuario del panel cambia su propia contraseña indicando la actual
     @Patch('me/contrasena')
     @Roles(RolUsuario.ADMIN, RolUsuario.SECRETARIO)
-    // El cambio invalida todos los tokens anteriores: se devuelve uno nuevo para que esta sesión siga abierta
-    async cambiarContrasena(@Req() req:RequestConUsuario, @Body() dto:CambiarContrasenaDto){
+    // El cambio invalida todos los tokens anteriores: se pone uno nuevo en la cookie para que esta sesión siga abierta
+    @HttpCode(204)
+    async cambiarContrasena(@Req() req:RequestConUsuario, @Body() dto:CambiarContrasenaDto, @Res({passthrough:true}) res:Response){
         await this.usuarioService.cambiarContrasena(req.user.id, dto);
-        return this.authService.emitirToken(req.user);
+        ponerCookieSesion(res, this.authService.emitirToken(req.user).access_token);
     }
 
     @Patch(':id')
