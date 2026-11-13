@@ -63,30 +63,6 @@ describe('AuditoriaService', () => {
     });
   });
 
-  describe('borradoDiario', () => {
-    afterEach(() => { delete process.env.AUDITORIA_BORRADO_DIARIO; });
-
-    it('sin AUDITORIA_BORRADO_DIARIO=true no borra nada', async () => {
-      (dataSource as unknown as { transaction: jest.Mock }).transaction = jest.fn();
-      expect(await service.borradoDiario()).toBe(0);
-      expect((dataSource as unknown as { transaction: jest.Mock }).transaction).not.toHaveBeenCalled();
-    });
-
-    it('con la variable activa vacía la tabla con el bloqueo apagado solo durante el TRUNCATE y deja constancia', async () => {
-      process.env.AUDITORIA_BORRADO_DIARIO = 'true';
-      const m = { query: jest.fn(async (sql: string) => (sql.startsWith('SELECT') ? [{ total: 7 }] : [])) };
-      (dataSource as unknown as { transaction: jest.Mock }).transaction = jest.fn((cb) => cb(m));
-      expect(await service.borradoDiario()).toBe(7);
-      expect(m.query.mock.calls.map(([sql]) => sql)).toEqual([
-        'SELECT count(*)::int AS total FROM auditoria',
-        'ALTER TABLE auditoria DISABLE TRIGGER auditoria_sin_truncate',
-        'TRUNCATE auditoria',
-        'ALTER TABLE auditoria ENABLE TRIGGER auditoria_sin_truncate',
-      ]);
-      expect(auditoriaRepo.save).toHaveBeenCalledWith(expect.objectContaining({ accion: 'BORRADO_DIARIO_AUDITORIA', detalle: { eliminados: 7 } }));
-    });
-  });
-
   describe('purgarVencidos', () => {
     it('deja constancia del corte cuando borra registros', async () => {
       dataSource.query.mockResolvedValue([{ eliminados: 40, hastaSecuencia: '40', hashCorte: 'abc' }]);

@@ -149,29 +149,6 @@ export class AuditoriaService{
         };
     }
 
-    // shortcut: vaciar la auditoría a diario elimina la trazabilidad (ISO 27001 A.8.15); pedido solo para el período de
-    // pruebas. Se activa con AUDITORIA_BORRADO_DIARIO=true; quitar la variable antes de la defensa para conservar todo.
-    // Al vaciar la tabla la cadena de hashes empieza de nuevo y sigue íntegra; el primer registro deja constancia del borrado.
-    @Cron(CronExpression.EVERY_DAY_AT_3AM, {timeZone:'America/Santiago'})
-    async borradoDiario(): Promise<number>{
-        if(process.env.AUDITORIA_BORRADO_DIARIO !== 'true') return 0;
-        try{
-            // DDL transaccional en Postgres: si el TRUNCATE falla, el bloqueo de la tabla vuelve a quedar activo
-            const eliminados = await this.dataSource.transaction(async (m) => {
-                const [{total}] = await m.query('SELECT count(*)::int AS total FROM auditoria') as {total:number}[];
-                await m.query('ALTER TABLE auditoria DISABLE TRIGGER auditoria_sin_truncate');
-                await m.query('TRUNCATE auditoria');
-                await m.query('ALTER TABLE auditoria ENABLE TRIGGER auditoria_sin_truncate');
-                return total;
-            });
-            await this.registrar({accion:'BORRADO_DIARIO_AUDITORIA', exito:true, detalle:{eliminados}});
-            return eliminados;
-        }catch(error){
-            this.logger.error(`No se pudo vaciar la auditoría: ${(error as Error).message}`);
-            return 0;
-        }
-    }
-
     // Retención (ISO 27701, Ley 21.719): borra los registros con más de 2 años. El plazo está fijo en la BD
     // (migración RetencionAuditoria) y el trigger rechaza borrar cualquier registro más nuevo, aunque lo pida la API.
     @Cron('30 3 * * *', {timeZone:'America/Santiago'})

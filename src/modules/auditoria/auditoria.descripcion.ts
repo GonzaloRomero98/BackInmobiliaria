@@ -35,6 +35,7 @@ const DESCRIPCIONES: Record<string, Texto> = {
 
     'POST modeloCasa': () => 'Creó un modelo',
     'PATCH modeloCasa/:id': (n) => `Editó ${n('el modelo')}`,
+    // La ruta ya no existe (se despublica con PATCH): se conserva para leer los registros antiguos
     'DELETE modeloCasa/:id': (n) => `Despublicó ${n('el modelo')}`,
     'DELETE modeloCasa/:id/definitivo': (n) => `Eliminó definitivamente ${n('el modelo')}`,
     'POST modeloCasa/:id/duplicar': (n) => `Duplicó ${n('el modelo')}`,

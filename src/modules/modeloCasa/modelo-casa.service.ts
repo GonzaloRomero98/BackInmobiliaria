@@ -154,13 +154,6 @@ export class ModeloCasaService{
         return {disponible: !existente || existente.id === excluirId};
     }
 
-    async despublicarModeloCasa(id:string):Promise<void>{
-        const resultado = await this.modeloCasaRepository.update({id, activo:true}, {activo:false});
-        if(!resultado.affected){
-            throw new NotFoundException('No se encontro el modelo de la casa');
-        }
-    }
-
     // Borrado definitivo, solo si nadie lo ha solicitado: solicitudes y reservas son datos de clientes y ventas que no
     // deben perderse (para sacarlo del catálogo está despublicar). Fotos, características y métricas se borran en cascada.
     // Si entra una solicitud entre el conteo y el borrado, la FK de solicitud rechaza el DELETE y la transacción se deshace.

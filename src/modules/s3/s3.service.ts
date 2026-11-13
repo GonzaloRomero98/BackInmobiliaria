@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, PayloadTooLargeException } from "@nest
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { ConfigService } from "@nestjs/config";
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { CarpetaS3, REGLAS_CARPETA } from "./s3.archivos";
 
 @Injectable()
@@ -36,7 +36,7 @@ export class S3Service {
             throw new PayloadTooLargeException(`El archivo supera el máximo de ${reglas.maxBytes / (1024 * 1024)} MB`);
         }
 
-        const key = `${carpeta}/${uuidv4()}.${extension}`
+        const key = `${carpeta}/${randomUUID()}.${extension}`
 
         const command = new PutObjectCommand({
             Bucket: this.awsBucketname,

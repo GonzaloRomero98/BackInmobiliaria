@@ -72,13 +72,6 @@ export class ModeloCasaController{
         return this.modeloCasaService.actualizarModeloCasa(id, actualizarModeloCasaDto);
     }
 
-    @Delete(':id')
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(RolUsuario.ADMIN)
-    despublicarModeloCasa(@Param('id', ParseUUIDPipe) id:string){
-        return this.modeloCasaService.despublicarModeloCasa(id);
-    }
-
     @Delete(':id/definitivo')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)

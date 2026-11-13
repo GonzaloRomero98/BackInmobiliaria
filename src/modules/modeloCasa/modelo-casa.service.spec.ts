@@ -326,15 +326,6 @@ describe('ModeloCasaService', () => {
     });
   });
 
-  it('despublicarModeloCasa marca activo=false; 404 si no existe o ya estaba despublicado', async () => {
-    modeloRepo.update.mockResolvedValue({ affected: 1 });
-    await service.despublicarModeloCasa('m1');
-    expect(modeloRepo.update).toHaveBeenCalledWith({ id: 'm1', activo: true }, { activo: false });
-
-    modeloRepo.update.mockResolvedValue({ affected: 0 });
-    await expect(service.despublicarModeloCasa('m1')).rejects.toBeInstanceOf(NotFoundException);
-  });
-
   describe('eliminarModeloCasa', () => {
     let manager: { findOne: jest.Mock; count: jest.Mock; delete: jest.Mock };
     beforeEach(() => {

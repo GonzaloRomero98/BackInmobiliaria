@@ -131,26 +131,6 @@ describe('RF-11 Reservas (PostgreSQL real)', () => {
   });
 });
 
-describe('Borrado diario de la auditoría (PostgreSQL real)', () => {
-  it('vacía la tabla, la cadena reinicia íntegra y el bloqueo de DELETE/TRUNCATE sigue activo después', async () => {
-    const auditoria = new AuditoriaService(ds.getRepository(Auditoria), ds.getRepository(Proyecto),
-      ds.getRepository(ModeloCasa), ds.getRepository(Usuario), ds);
-    for (let i = 0; i < 3; i++) await auditoria.registrar({ accion: `PRUEBA_${i}`, exito: true });
-    process.env.AUDITORIA_BORRADO_DIARIO = 'true';
-    try {
-      expect(await auditoria.borradoDiario()).toBeGreaterThanOrEqual(3);
-    } finally {
-      delete process.env.AUDITORIA_BORRADO_DIARIO;
-    }
-    const filas = await ds.getRepository(Auditoria).find();
-    expect(filas).toHaveLength(1);
-    expect(filas[0]).toMatchObject({ accion: 'BORRADO_DIARIO_AUDITORIA', secuencia: '1' });
-    expect((await auditoria.verificar()).integra).toBe(true);
-    await expect(ds.query('DELETE FROM auditoria')).rejects.toThrow('solo inserción');
-    await expect(ds.query('TRUNCATE auditoria')).rejects.toThrow('solo inserción');
-  });
-});
-
 describe('Retención de la auditoría: 2 años (PostgreSQL real)', () => {
   it('borra solo el comienzo de la cadena con más de 2 años, la verificación sigue íntegra y lo reciente no se puede borrar', async () => {
     const auditoria = new AuditoriaService(ds.getRepository(Auditoria), ds.getRepository(Proyecto),

@@ -710,17 +710,6 @@ describe('API (e2e, BD simulada)', () => {
     ])('POST /:id/duplicar con nombre inválido %j -> 400', (body) =>
       http().post(`/api/modeloCasa/${UUID}/duplicar`).set(auth(adminToken)).send(body).expect(400));
 
-    it('DELETE despublica (borrado lógico); inexistente -> 404; SECRETARIO -> 403', async () => {
-      repo(ModeloCasa).update.mockResolvedValue({ affected: 1 });
-      await http().delete(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).expect(200);
-      expect(repo(ModeloCasa).update).toHaveBeenCalledWith({ id: UUID, activo: true }, { activo: false });
-      expect(repo(ModeloCasa).delete).not.toHaveBeenCalled();
-
-      repo(ModeloCasa).update.mockResolvedValue({ affected: 0 });
-      await http().delete(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).expect(404);
-      await http().delete(`/api/modeloCasa/${UUID}`).set(auth(secretarioToken)).expect(403);
-    });
-
     it('PUT /:id/fotos/orden reordena con ADMIN; ids inválidos -> 400; SECRETARIO -> 403', async () => {
       const url = `/api/modeloCasa/${UUID}/fotos/orden`;
       const F1 = '22222222-2222-4222-8222-222222222222', F2 = '33333333-3333-4333-8333-333333333333';
