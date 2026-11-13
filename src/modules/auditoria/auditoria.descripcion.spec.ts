@@ -33,6 +33,11 @@ describe('describirAccion', () => {
     expect(describirAccion(registro(metodo, ruta), nombres)).toBe(esperado);
   });
 
+  it('un recurso eliminado se nombra con el nombre guardado en el detalle', () => {
+    expect(describirAccion(registro('DELETE', `/api/proyectos/${FOTO}/definitivo`, { detalle: { nombre: 'Las Lomas' } }), nombres)).toBe('Eliminó definitivamente el proyecto «Las Lomas»');
+    expect(describirAccion(registro('DELETE', `/api/modeloCasa/${FOTO}/definitivo`), nombres)).toBe('Eliminó definitivamente un modelo');
+  });
+
   it('si el recurso ya no se encuentra, usa un artículo indefinido', () => {
     expect(describirAccion(registro('PATCH', `/api/proyectos/${FOTO}`), nombres)).toBe('Editó un proyecto');
     expect(describirAccion(registro('PUT', `/api/proyectos/${FOTO}/normativa`), nombres)).toBe('Guardó la normativa de un proyecto');

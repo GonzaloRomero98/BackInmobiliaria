@@ -335,6 +335,31 @@ describe('ModeloCasaService', () => {
     await expect(service.despublicarModeloCasa('m1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  describe('eliminarModeloCasa', () => {
+    let manager: { findOne: jest.Mock; count: jest.Mock; delete: jest.Mock };
+    beforeEach(() => {
+      manager = { findOne: jest.fn(async () => ({ id: 'm1', nombreModelo: 'Casa A' })), count: jest.fn(async () => 0), delete: jest.fn() };
+      Object.assign(modeloRepo, { manager: { transaction: jest.fn((cb: (m: typeof manager) => unknown) => cb(manager)) } });
+    });
+
+    it('sin solicitudes lo borra y devuelve su nombre (para la auditoría)', async () => {
+      await expect(service.eliminarModeloCasa('m1')).resolves.toEqual({ nombre: 'Casa A' });
+      expect(manager.delete).toHaveBeenCalledWith(ModeloCasa, { id: 'm1' });
+    });
+
+    it('409 sin borrar nada si tiene solicitudes de clientes', async () => {
+      manager.count.mockResolvedValue(2);
+      await expect(service.eliminarModeloCasa('m1')).rejects.toThrow('tiene 2 solicitudes de clientes');
+      expect(manager.delete).not.toHaveBeenCalled();
+    });
+
+    it('404 si no existe', async () => {
+      manager.findOne.mockResolvedValue(null);
+      await expect(service.eliminarModeloCasa('m1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(manager.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('mostrarModelosCasa', () => {
     const where = () => modeloRepo.find.mock.calls[0][0].where;
     const order = () => modeloRepo.find.mock.calls[0][0].order;

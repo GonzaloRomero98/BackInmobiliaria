@@ -10,6 +10,7 @@ import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { FiltrosModeloCasaDto, OrdenModelo } from "./dto/filtrosModeloCasa.dto";
 import { calcularEstado, EstadoModelo, TipoVivienda } from "./modelo-casa.enum";
+import { Solicitud } from "../solicitud/entities/solicitud.entity";
 
 const ORDEN: Record<OrdenModelo, FindOptionsOrder<ModeloCasa>> = {
     precio_asc: {precio:'ASC'},
@@ -158,6 +159,26 @@ export class ModeloCasaService{
         if(!resultado.affected){
             throw new NotFoundException('No se encontro el modelo de la casa');
         }
+    }
+
+    // Borrado definitivo, solo si nadie lo ha solicitado: solicitudes y reservas son datos de clientes y ventas que no
+    // deben perderse (para sacarlo del catálogo está despublicar). Fotos, características y métricas se borran en cascada.
+    // Si entra una solicitud entre el conteo y el borrado, la FK de solicitud rechaza el DELETE y la transacción se deshace.
+    // shortcut: el .glb y las imágenes quedan en S3 (una copia duplicada puede usar los mismos archivos); limpiarlos
+    // requiere comprobar que ningún otro modelo o proyecto los referencia.
+    async eliminarModeloCasa(id:string):Promise<{nombre:string}>{
+        return this.modeloCasaRepository.manager.transaction(async (manager) => {
+            const modelo = await manager.findOne(ModeloCasa, {where:{id}, select:{id:true, nombreModelo:true}, loadEagerRelations:false});
+            if(!modelo){
+                throw new NotFoundException('No se encontro el modelo de la casa');
+            }
+            const solicitudes = await manager.count(Solicitud, {where:{modeloCasa:{id}}});
+            if(solicitudes > 0){
+                throw new ConflictException(`«${modelo.nombreModelo}» tiene ${solicitudes} ${solicitudes === 1 ? 'solicitud' : 'solicitudes'} de clientes y no se puede eliminar. Despublícalo para sacarlo del catálogo.`);
+            }
+            await manager.delete(ModeloCasa, {id});
+            return {nombre:modelo.nombreModelo};
+        });
     }
 
     private async buscarCaracteristicas(ids:number[] = []):Promise<Caracteristica[]>{

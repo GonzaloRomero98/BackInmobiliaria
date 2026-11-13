@@ -1,5 +1,6 @@
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
 import { ProyectoService } from "./proyecto.service";
 import { CrearProyectoDto } from "./dto/crearProyecto.dto";
 import { ActualizarProyectoDto } from "./dto/actualizarProyecto.dto";
@@ -52,6 +53,14 @@ export class PoryectoController{
     @Roles(RolUsuario.ADMIN)
     despublicarProyecto(@Param('id', new ParseUUIDPipe) id:string){
         return this.proyectoService.despublicarProyecto(id);
+    }
+
+    @Delete(':id/definitivo')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    async eliminarProyecto(@Param('id', new ParseUUIDPipe) id:string, @Res({passthrough:true}) res:Response){
+        // Ya no existe para buscar su nombre: la auditoría lo guarda en el detalle
+        res.locals.auditoriaDetalle = await this.proyectoService.eliminarProyecto(id);
     }
 
     @Patch(':id/publicar')

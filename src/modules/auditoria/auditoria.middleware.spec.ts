@@ -7,8 +7,8 @@ describe('AuditoriaMiddleware', () => {
   const auditoria = { registrar: jest.fn() };
   const middleware = new AuditoriaMiddleware(auditoria as unknown as AuditoriaService);
 
-  function ejecutar(req: Partial<Request>, estado: number) {
-    const res = Object.assign(new EventEmitter(), { statusCode: estado });
+  function ejecutar(req: Partial<Request>, estado: number, locals: Record<string, unknown> = {}) {
+    const res = Object.assign(new EventEmitter(), { statusCode: estado, locals });
     const next = jest.fn();
     middleware.use({ ip: '1.2.3.4', ...req } as Request, res as unknown as Response, next);
     expect(next).toHaveBeenCalled();
@@ -25,8 +25,13 @@ describe('AuditoriaMiddleware', () => {
 
     expect(auditoria.registrar).toHaveBeenCalledWith({
       accion: 'PATCH /api/solicitudes/abc/contactado', metodo: 'PATCH', ruta: '/api/solicitudes/abc/contactado',
-      estado: 200, exito: true, idUsuario: 'u1', correo: 'a@x.cl', rol: 'SECRETARIO', ip: '1.2.3.4',
+      estado: 200, exito: true, idUsuario: 'u1', correo: 'a@x.cl', rol: 'SECRETARIO', ip: '1.2.3.4', detalle: null,
     });
+  });
+
+  it('guarda el detalle que deja el controlador (el nombre de lo que se eliminó)', () => {
+    ejecutar({ method: 'DELETE', originalUrl: '/api/proyectos/abc/definitivo' }, 200, { auditoriaDetalle: { nombre: 'Los Robles' } });
+    expect(auditoria.registrar.mock.calls[0][0]).toMatchObject({ ruta: '/api/proyectos/abc/definitivo', detalle: { nombre: 'Los Robles' } });
   });
 
   it('en login guarda el correo intentado pero nunca la contraseña', () => {

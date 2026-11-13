@@ -1,6 +1,7 @@
 import { EtapaProyecto } from './proyecto.enum';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
 import { ProyectoService } from './proyecto.service';
 import { Proyecto } from './entities/proyecto.entity';
 import { Ciudad } from '../ubicacion/entities/ciudad.entity';
@@ -233,6 +234,41 @@ describe('ProyectoService', () => {
     it('obtenerEntorno 404 si aún no se calculó', async () => {
       proyectoRepo.findOne.mockResolvedValue({ id: 'p1', entorno: null, entornoActualizadoEn: null });
       await expect(service.obtenerEntorno('p1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+  describe('eliminarProyecto', () => {
+    let manager: { findOne: jest.Mock; find: jest.Mock; count: jest.Mock; delete: jest.Mock };
+    beforeEach(() => {
+      manager = {
+        findOne: jest.fn(async () => ({ id: 'p1', nombre: 'Los Robles' })),
+        find: jest.fn(async () => [{ id: 'm1', nombreModelo: 'Casa A' }, { id: 'm2', nombreModelo: 'Casa B' }]),
+        count: jest.fn(async () => 0), delete: jest.fn(),
+      };
+      Object.assign(proyectoRepo, { manager: { transaction: jest.fn((cb: (m: typeof manager) => unknown) => cb(manager)) } });
+    });
+
+    it('borra sus modelos y luego el proyecto si ninguno tiene solicitudes', async () => {
+      await expect(service.eliminarProyecto('p1')).resolves.toEqual({ nombre: 'Los Robles' });
+      expect(manager.delete).toHaveBeenNthCalledWith(1, ModeloCasa, { id: In(['m1', 'm2']) });
+      expect(manager.delete).toHaveBeenNthCalledWith(2, Proyecto, { id: 'p1' });
+    });
+
+    it('sin modelos borra solo el proyecto', async () => {
+      manager.find.mockResolvedValue([]);
+      await service.eliminarProyecto('p1');
+      expect(manager.delete).toHaveBeenCalledTimes(1);
+      expect(manager.delete).toHaveBeenCalledWith(Proyecto, { id: 'p1' });
+    });
+
+    it('409 nombrando los modelos con solicitudes, sin borrar nada', async () => {
+      manager.count.mockImplementation(async (_entidad, { where }) => (where.modeloCasa.id === 'm2' ? 3 : 0));
+      await expect(service.eliminarProyecto('p1')).rejects.toThrow('el modelo «Casa B» tiene solicitudes de clientes');
+      expect(manager.delete).not.toHaveBeenCalled();
+    });
+
+    it('404 si no existe', async () => {
+      manager.findOne.mockResolvedValue(null);
+      await expect(service.eliminarProyecto('p1')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

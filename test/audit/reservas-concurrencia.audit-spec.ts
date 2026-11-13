@@ -14,6 +14,8 @@ import { ModeloCasa } from '../../src/modules/modeloCasa/entities/modeloCasa.ent
 import { GaleriaModeloCasa } from '../../src/modules/modeloCasa/entities/galeriaModeloCasa.entity';
 import { Caracteristica } from '../../src/modules/caracteristicas/entities/caracteristica.entity';
 import { Solicitud } from '../../src/modules/solicitud/entities/solicitud.entity';
+import { NotaSolicitud } from '../../src/modules/solicitud/entities/notaSolicitud.entity';
+import { Cotizacion } from '../../src/modules/solicitud/entities/cotizacion.entity';
 import { Reserva } from '../../src/modules/reserva/entities/reserva.entity';
 import { Auditoria } from '../../src/modules/auditoria/entities/auditoria.entity';
 import { ReservaService } from '../../src/modules/reserva/reserva.service';
@@ -53,7 +55,7 @@ beforeAll(async () => {
     username: env.AUDIT_DB_USER ?? 'postgres', password: env.AUDIT_DB_PASSWORD ?? 'auditoria',
     database: env.AUDIT_DB_NAME ?? 'auditoria',
     entities: [Usuario, Rol, Proyecto, NormativaProyecto, Ciudad, Region, ModeloCasa, GaleriaModeloCasa,
-      Caracteristica, Solicitud, Reserva, Auditoria],
+      Caracteristica, Solicitud, NotaSolicitud, Cotizacion, Reserva, Auditoria],
     migrations: migraciones, dropSchema: true, extra: { max: 20 },
   });
   await ds.initialize();
@@ -68,7 +70,8 @@ beforeAll(async () => {
   const auditoria = new AuditoriaService(ds.getRepository(Auditoria), ds.getRepository(Proyecto),
     ds.getRepository(ModeloCasa), ds.getRepository(Usuario), ds);
   solicitudes = new SolicitudService(ds.getRepository(Solicitud), modelos,
-    new ConfigService({ SOLICITUD_RETENCION_DIAS: '365' }), auditoria, ds.getRepository(Reserva));
+    new ConfigService({ SOLICITUD_RETENCION_DIAS: '365' }), auditoria, ds.getRepository(Reserva),
+    ds.getRepository(NotaSolicitud), ds.getRepository(Cotizacion));
 }, 120_000);
 
 afterAll(async () => { await ds?.destroy(); });

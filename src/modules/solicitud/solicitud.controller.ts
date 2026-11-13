@@ -10,6 +10,12 @@ import { JwtAuthGuard } from "../auth/guards/jwtAuth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorator/rol.decorator";
 import { RolUsuario } from "../rol/rol.enum";
+import { CrearSolicitudPanelDto } from "./dto/crearSolicitudPanel.dto";
+import { CrearNotaDto } from "./dto/crearNota.dto";
+import { ActualizarVisitaDto } from "./dto/actualizarVisita.dto";
+import { CrearCotizacionDto } from "./dto/crearCotizacion.dto";
+
+type RequestConUsuario = Request & {user:{id:string, correo:string, rol:string}};
 
 @ApiTags('solicitudes')
 @Controller('solicitudes')
@@ -21,6 +27,15 @@ export class SolicitudController{
     @Throttle({default:{limit:5, ttl:60_000}})
     crearSolicitud(@Body() crearSolicitudDto:CrearSolicitudDto){
         return this.solicitudService.crearSolicitud(crearSolicitudDto);
+    }
+
+    // Cliente que llega a la sala, llama o escribe: lo registra la secretaria
+    @Post('panel')
+    @ApiBearerAuth()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
+    crearDesdePanel(@Body() dto:CrearSolicitudPanelDto){
+        return this.solicitudService.crearDesdePanel(dto);
     }
 
     @Get()
@@ -37,7 +52,7 @@ export class SolicitudController{
     @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
     @Header('Content-Type', 'text/csv; charset=utf-8')
     @Header('Content-Disposition', 'attachment; filename="solicitudes.csv"')
-    exportarSolicitudes(@Req() req:Request & {user:{id:string, correo:string, rol:string}}){
+    exportarSolicitudes(@Req() req:RequestConUsuario){
         return this.solicitudService.exportarCsv(req.user);
     }
 
@@ -66,6 +81,30 @@ export class SolicitudController{
     @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
     marcarContactado(@Param('id',ParseUUIDPipe) id:string){
         return this.solicitudService.marcarContactado(id);
+    }
+
+    @Post(':id/notas')
+    @ApiBearerAuth()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
+    agregarNota(@Param('id',ParseUUIDPipe) id:string, @Body() dto:CrearNotaDto, @Req() req:RequestConUsuario){
+        return this.solicitudService.agregarNota(id, dto.texto, req.user.id);
+    }
+
+    @Patch(':id/visita')
+    @ApiBearerAuth()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
+    actualizarVisita(@Param('id',ParseUUIDPipe) id:string, @Body() dto:ActualizarVisitaDto, @Req() req:RequestConUsuario){
+        return this.solicitudService.actualizarVisita(id, dto, req.user.id);
+    }
+
+    @Post(':id/cotizaciones')
+    @ApiBearerAuth()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
+    emitirCotizacion(@Param('id',ParseUUIDPipe) id:string, @Body() dto:CrearCotizacionDto, @Req() req:RequestConUsuario){
+        return this.solicitudService.emitirCotizacion(id, dto, req.user.id);
     }
 
     // Derecho de supresión: borra todas las solicitudes de una persona

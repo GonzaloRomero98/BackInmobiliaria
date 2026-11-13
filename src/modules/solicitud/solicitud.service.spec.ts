@@ -6,13 +6,18 @@ import { Solicitud } from './entities/solicitud.entity';
 import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { Reserva } from '../reserva/entities/reserva.entity';
+import { NotaSolicitud } from './entities/notaSolicitud.entity';
+import { Cotizacion } from './entities/cotizacion.entity';
 
 describe('SolicitudService', () => {
-  let solicitudRepo: { findOne: jest.Mock; find: jest.Mock; findAndCount: jest.Mock; count: jest.Mock; save: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
+  let solicitudRepo: { exists: jest.Mock; findOne: jest.Mock; find: jest.Mock; findAndCount: jest.Mock; count: jest.Mock; save: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
   let modeloRepo: { findOne: jest.Mock };
   let reservaRepo: { exists: jest.Mock; find: jest.Mock };
   let auditoria: { registrar: jest.Mock };
   let qb: Record<'delete' | 'where' | 'execute', jest.Mock>;
+  let notaRepo: { find: jest.Mock; save: jest.Mock; create: jest.Mock };
+  let cotizacionRepo: { find: jest.Mock; save: jest.Mock; create: jest.Mock };
+  let manager: { save: jest.Mock; create: jest.Mock };
   let service: SolicitudService;
   const dto = {
     nombre: 'Juan', apellido: 'Pérez', correo: 'j@p.cl', celular: '+56911111111',
@@ -26,6 +31,8 @@ describe('SolicitudService', () => {
       new ConfigService(config),
       auditoria as unknown as AuditoriaService,
       reservaRepo as unknown as Repository<Reserva>,
+      notaRepo as unknown as Repository<NotaSolicitud>,
+      cotizacionRepo as unknown as Repository<Cotizacion>,
     );
   }
 
@@ -34,10 +41,15 @@ describe('SolicitudService', () => {
     qb.delete.mockReturnValue(qb);
     qb.where.mockReturnValue(qb);
     solicitudRepo = {
-      findOne: jest.fn(), find: jest.fn(), save: jest.fn(async (x) => x),
+      exists: jest.fn(), findOne: jest.fn(), find: jest.fn(), save: jest.fn(async (x) => x),
       findAndCount: jest.fn(async () => [[], 0]), count: jest.fn(async () => 0),
       delete: jest.fn(), createQueryBuilder: jest.fn(() => qb),
     };
+    // Transacción de actualizarVisita: save devuelve lo guardado, create arma la nota automática
+    manager = { save: jest.fn(async (x) => x), create: jest.fn((_entidad, x) => x) };
+    Object.assign(solicitudRepo, { manager: { transaction: jest.fn((cb: (m: typeof manager) => unknown) => cb(manager)) } });
+    notaRepo = { find: jest.fn(async () => []), save: jest.fn(async (x) => x), create: jest.fn((x) => x) };
+    cotizacionRepo = { find: jest.fn(async () => []), save: jest.fn(async (x) => x), create: jest.fn((x) => x) };
     modeloRepo = { findOne: jest.fn() };
     reservaRepo = { exists: jest.fn().mockResolvedValue(false), find: jest.fn().mockResolvedValue([]) };
     auditoria = { registrar: jest.fn() };
@@ -134,21 +146,21 @@ describe('SolicitudService', () => {
     it('genera CSV con BOM y ";", escapa comillas y saltos, y audita la exportación', async () => {
       solicitudRepo.find.mockResolvedValue([{
         creadoEn: new Date('2026-10-01T12:00:00Z'), nombre: 'Ana', apellido: 'Díaz', correo: 'a@b.cl', celular: '+56 9 1111 1111',
-        mensaje: 'Hola; "quiero"\nvisitar', contactado: false, visitaPreferida: null,
+        mensaje: 'Hola; "quiero"\nvisitar', contactado: false, visitaPreferida: null, visitaEstado: null, origen: 'WEB',
         modeloCasa: { nombreModelo: 'Casa A', proyecto: { nombre: 'Los Robles' } },
       }, {
         creadoEn: new Date('2026-10-02T12:00:00Z'), nombre: 'Luis', apellido: 'Soto', correo: 'l@s.cl', celular: '+56922222222',
-        mensaje: null, contactado: true, visitaPreferida: new Date('2026-10-10T18:30:00Z'),
+        mensaje: null, contactado: true, visitaPreferida: new Date('2026-10-10T18:30:00Z'), visitaEstado: 'CONFIRMADA', origen: 'TELEFONO',
         modeloCasa: { nombreModelo: 'Casa B', proyecto: { nombre: 'Los Robles' } },
       }]);
 
       const csv = await service.exportarCsv(usuario);
 
-      expect(csv.split('\r\n')[0]).toBe('﻿Fecha;Nombre;Apellido;Correo;Celular;Proyecto;Modelo;Mensaje;Estado;Visita preferida');
+      expect(csv.split('\r\n')[0]).toBe('﻿Fecha;Nombre;Apellido;Correo;Celular;Proyecto;Modelo;Mensaje;Estado;Visita preferida;Estado visita;Origen');
       expect(csv.split('\r\n')[1]).toBe(
-        '2026-10-01T12:00:00.000Z;Ana;Díaz;a@b.cl;+56 9 1111 1111;Los Robles;Casa A;"Hola; ""quiero""\nvisitar";Pendiente;',
+        '2026-10-01T12:00:00.000Z;Ana;Díaz;a@b.cl;+56 9 1111 1111;Los Robles;Casa A;"Hola; ""quiero""\nvisitar";Pendiente;;;Web',
       );
-      expect(csv.split('\r\n')[2]).toBe('2026-10-02T12:00:00.000Z;Luis;Soto;l@s.cl;+56922222222;Los Robles;Casa B;;Contactado;2026-10-10T18:30:00.000Z');
+      expect(csv.split('\r\n')[2]).toBe('2026-10-02T12:00:00.000Z;Luis;Soto;l@s.cl;+56922222222;Los Robles;Casa B;;Contactado;2026-10-10T18:30:00.000Z;Confirmada;Teléfono');
       expect(auditoria.registrar).toHaveBeenCalledWith({
         accion: 'EXPORTAR_SOLICITUDES', exito: true, idUsuario: 'u1', correo: 'a@x.cl', rol: 'SECRETARIO', detalle: { cantidad: 2 },
       });
@@ -262,6 +274,141 @@ describe('SolicitudService', () => {
     it('filtro visita pide visitaPreferida no nula', async () => {
       await service.listarSolicitudes({ pagina: 1, limite: 20, filtro: 'visita' });
       expect(solicitudRepo.findAndCount.mock.calls[0][0].where).toEqual({ visitaPreferida: Not(IsNull()) });
+    });
+
+    it('buscar: cada palabra debe aparecer (AND), escapa comodines y se combina con el filtro', async () => {
+      await service.listarSolicitudes({ pagina: 1, limite: 20, filtro: 'pendientes', buscar: 'ana  50%' });
+      const where = solicitudRepo.findAndCount.mock.calls[0][0].where;
+      expect(where.contactado).toBe(false);
+      const id = where.id as FindOperator<string>;
+      expect(id.type).toBe('raw');
+      expect(id.objectLiteralParameters).toEqual({ termino0: '%ana%', termino1: '%50\\%%' });
+      const sql = id.getSql!('"S"."id"');
+      expect(sql).toContain('"S"."id" IN (SELECT s.id FROM solicitud s WHERE');
+      expect(sql).toContain(':termino0 AND concat_ws');
+    });
+
+    it('sin buscar no agrega condición', async () => {
+      await service.listarSolicitudes({ pagina: 1, limite: 20, filtro: 'todas', buscar: undefined });
+      expect(solicitudRepo.findAndCount.mock.calls[0][0].where).toEqual({});
+    });
+  });
+
+  describe('origen', () => {
+    const conSala = { id: 'm1', proyecto: { salaDireccion: '1 Sur 100' } };
+    const enDias = (d: number) => new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
+
+    it('la web queda WEB, pendiente y con la visita por confirmar', async () => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      const s = await service.crearSolicitud({ ...dto, visitaPreferida: enDias(2) });
+      expect(s).toMatchObject({ origen: 'WEB', contactado: false, visitaEstado: 'POR_CONFIRMAR' });
+    });
+
+    it('desde el panel queda contactada, con su origen y la visita confirmada', async () => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      const { aceptaPrivacidad: _, ...datos } = dto;
+      const s = await service.crearDesdePanel({ ...datos, origen: 'TELEFONO' as never, clienteInformado: true, visitaPreferida: enDias(2) });
+      expect(s).toMatchObject({ origen: 'TELEFONO', contactado: true, visitaEstado: 'CONFIRMADA' });
+      expect(s.consentimientoEn).toBeInstanceOf(Date);
+    });
+
+    it('sin visita, el estado de la visita es null', async () => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      expect((await service.crearSolicitud(dto)).visitaEstado).toBeNull();
+    });
+  });
+
+  describe('notas', () => {
+    it('guarda el texto con la solicitud y el autor', async () => {
+      solicitudRepo.exists.mockResolvedValue(true);
+      await service.agregarNota('s1', 'Llamé, no contestó', 'u1');
+      expect(notaRepo.save).toHaveBeenCalledWith({ texto: 'Llamé, no contestó', solicitud: { id: 's1' }, usuario: { id: 'u1' } });
+    });
+
+    it('404 si la solicitud no existe', async () => {
+      solicitudRepo.exists.mockResolvedValue(false);
+      await expect(service.agregarNota('s1', 'x', 'u1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(notaRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('el detalle trae notas y cotizaciones sin datos sensibles del autor', async () => {
+      solicitudRepo.findOne.mockResolvedValue({ id: 's1' });
+      notaRepo.find.mockResolvedValue([{ id: 'n1' }]);
+      cotizacionRepo.find.mockResolvedValue([{ id: 'c1' }]);
+      const s = await service.obtenerSolicitud('s1');
+      expect(s).toMatchObject({ id: 's1', notas: [{ id: 'n1' }], cotizaciones: [{ id: 'c1' }] });
+      for (const repo of [notaRepo, cotizacionRepo]) {
+        expect(repo.find.mock.calls[0][0].select.usuario).toEqual({ id: true, nombre: true });
+      }
+    });
+  });
+
+  describe('visita', () => {
+    const enHoras = (h: number) => new Date(Date.now() + h * 60 * 60 * 1000);
+    const conVisita = (visita: Date | null, estado: string | null = 'POR_CONFIRMAR') => ({
+      id: 's1', contactado: false, visitaPreferida: visita, visitaEstado: estado,
+      modeloCasa: { proyecto: { salaDireccion: '1 Sur 100' } },
+    });
+
+    it('reagendar cambia la fecha, la deja confirmada y anota la fecha anterior', async () => {
+      solicitudRepo.findOne.mockResolvedValue(conVisita(new Date('2026-12-01T13:00:00Z')));
+      const nueva = enHoras(48);
+      const s = await service.actualizarVisita('s1', { fecha: nueva.toISOString() }, 'u1');
+      expect(s).toMatchObject({ visitaPreferida: nueva, visitaEstado: 'CONFIRMADA', contactado: true });
+      const nota = manager.create.mock.calls[0][1];
+      expect(nota.texto).toMatch(/^Visita reagendada: del 01-12-2026,? 10:00 al /);
+      expect(nota).toMatchObject({ solicitud: { id: 's1' }, usuario: { id: 'u1' } });
+    });
+
+    it('agendar cuando no había visita deja una nota "Visita agendada"', async () => {
+      solicitudRepo.findOne.mockResolvedValue(conVisita(null, null));
+      await service.actualizarVisita('s1', { fecha: enHoras(24).toISOString() }, 'u1');
+      expect(manager.create.mock.calls[0][1].texto).toMatch(/^Visita agendada para el /);
+    });
+
+    it('confirmar sin fecha no deja nota', async () => {
+      solicitudRepo.findOne.mockResolvedValue(conVisita(enHoras(24)));
+      const s = await service.actualizarVisita('s1', { estado: 'CONFIRMADA' as never }, 'u1');
+      expect(s.visitaEstado).toBe('CONFIRMADA');
+      expect(manager.create).not.toHaveBeenCalled();
+    });
+
+    it('la asistencia solo se marca cuando la hora ya pasó', async () => {
+      solicitudRepo.findOne.mockResolvedValue(conVisita(enHoras(2)));
+      await expect(service.actualizarVisita('s1', { estado: 'ASISTIO' as never }, 'u1')).rejects.toThrow('después de la hora');
+      solicitudRepo.findOne.mockResolvedValue(conVisita(enHoras(-2)));
+      expect((await service.actualizarVisita('s1', { estado: 'NO_ASISTIO' as never }, 'u1')).visitaEstado).toBe('NO_ASISTIO');
+    });
+
+    it('400 sin fecha ni estado, o con estado y sin visita', async () => {
+      await expect(service.actualizarVisita('s1', {}, 'u1')).rejects.toBeInstanceOf(BadRequestException);
+      solicitudRepo.findOne.mockResolvedValue(conVisita(null, null));
+      await expect(service.actualizarVisita('s1', { estado: 'CONFIRMADA' as never }, 'u1')).rejects.toThrow('no tiene una visita');
+      expect(manager.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cotizaciones', () => {
+    it('congela modelo y precio del servidor con las condiciones elegidas', async () => {
+      solicitudRepo.findOne.mockResolvedValue({
+        id: 's1', modeloCasa: { nombreModelo: 'Casa A', precio: '3500.50', moneda: 'UF', tipoOperacion: 'VENTA' },
+      });
+      await service.emitirCotizacion('s1', { pie: 20, tasa: 4.5, plazo: 25, validez: 15, nota: '  sujeto a stock ', uf: { valor: 39000, fecha: '2026-11-12' } }, 'u1');
+      expect(cotizacionRepo.save).toHaveBeenCalledWith({
+        datos: {
+          nombreModelo: 'Casa A', precio: 3500.5, moneda: 'UF', tipoOperacion: 'VENTA', uf: { valor: 39000, fecha: '2026-11-12' },
+          pie: 20, tasa: 4.5, plazo: 25, validez: 15, nota: 'sujeto a stock',
+        },
+        solicitud: { id: 's1' }, usuario: { id: 'u1' },
+      });
+    });
+
+    it('sin UF guarda null; 404 si la solicitud no existe', async () => {
+      solicitudRepo.findOne.mockResolvedValueOnce({ id: 's1', modeloCasa: { nombreModelo: 'A', precio: 1, moneda: 'CLP', tipoOperacion: 'ARRIENDO' } });
+      await service.emitirCotizacion('s1', { pie: 0, tasa: 0, plazo: 1, validez: 1 }, 'u1');
+      expect(cotizacionRepo.save.mock.calls[0][0].datos).toMatchObject({ uf: null, nota: '' });
+      solicitudRepo.findOne.mockResolvedValueOnce(null);
+      await expect(service.emitirCotizacion('s2', { pie: 0, tasa: 0, plazo: 1, validez: 1 }, 'u1')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

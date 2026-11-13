@@ -29,12 +29,14 @@ const DESCRIPCIONES: Record<string, Texto> = {
     'PATCH proyectos/:id': (n) => `Editó ${n('el proyecto')}`,
     'DELETE proyectos/:id': (n) => `Despublicó ${n('el proyecto')}`,
     'PATCH proyectos/:id/publicar': (n) => `Volvió a publicar ${n('el proyecto')}`,
+    'DELETE proyectos/:id/definitivo': (n) => `Eliminó definitivamente ${n('el proyecto')}`,
     'POST proyectos/:id/entorno': (n) => `Recalculó el entorno ${n('del proyecto')}`,
     'PUT proyectos/:id/normativa': (n) => `Guardó la normativa ${n('del proyecto')}`,
 
     'POST modeloCasa': () => 'Creó un modelo',
     'PATCH modeloCasa/:id': (n) => `Editó ${n('el modelo')}`,
     'DELETE modeloCasa/:id': (n) => `Despublicó ${n('el modelo')}`,
+    'DELETE modeloCasa/:id/definitivo': (n) => `Eliminó definitivamente ${n('el modelo')}`,
     'POST modeloCasa/:id/duplicar': (n) => `Duplicó ${n('el modelo')}`,
     'POST modeloCasa/:id/fotos': (n) => `Agregó una foto ${n('al modelo')}`,
     'PUT modeloCasa/:id/fotos/orden': (n) => `Reordenó las fotos ${n('del modelo')}`,
@@ -45,6 +47,10 @@ const DESCRIPCIONES: Record<string, Texto> = {
     'GET solicitudes': () => 'Consultó la bandeja de solicitudes',
     'GET solicitudes/:id': () => 'Consultó el detalle de una solicitud',
     'PATCH solicitudes/:id/contactado': () => 'Marcó una solicitud como contactada',
+    'POST solicitudes/panel': () => 'Registró una solicitud desde el panel',
+    'POST solicitudes/:id/notas': () => 'Agregó una nota a una solicitud',
+    'PATCH solicitudes/:id/visita': () => 'Actualizó la visita de una solicitud',
+    'POST solicitudes/:id/cotizaciones': () => 'Emitió una cotización',
     'DELETE solicitudes': () => 'Eliminó las solicitudes de un titular (derecho de supresión)',
     'DELETE solicitudes/:id': () => 'Eliminó una solicitud',
 
@@ -83,6 +89,7 @@ export function describirAccion(r: RegistroDescribible, nombres: ReadonlyMap<str
 
     const texto = DESCRIPCIONES[`${r.metodo} ${ruta.patron}`];
     if (!texto) return null;
-    const nombre = ruta.id ? nombres.get(ruta.id) : undefined;
+    // Un recurso eliminado ya no está en la BD: su nombre quedó en el detalle del registro
+    const nombre = (ruta.id ? nombres.get(ruta.id) : undefined) ?? (typeof r.detalle?.nombre === 'string' ? r.detalle.nombre : undefined);
     return texto((articulo) => nombre ? `${articulo} «${nombre}»` : articulo.replace(/^(el|del|al) /, (_, a: string) => `${INDEFINIDO[a]} `));
 }

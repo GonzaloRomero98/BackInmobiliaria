@@ -10,6 +10,18 @@ import { ListarSolicitudesDto } from "./dto/listarSolicitudes.dto";
 import { AuditoriaService } from "../auditoria/auditoria.service";
 import { Reserva } from "../reserva/entities/reserva.entity";
 import { ESTADOS_ACTIVOS } from "../reserva/reserva.enum";
+import { escaparLike } from "../auditoria/auditoria.service";
+import { NotaSolicitud } from "./entities/notaSolicitud.entity";
+import { Cotizacion, DatosCotizacion } from "./entities/cotizacion.entity";
+import { CrearSolicitudPanelDto } from "./dto/crearSolicitudPanel.dto";
+import { ActualizarVisitaDto } from "./dto/actualizarVisita.dto";
+import { CrearCotizacionDto } from "./dto/crearCotizacion.dto";
+import { ETIQUETA_ORIGEN, ETIQUETA_VISITA, EstadoVisita, OrigenSolicitud } from "./solicitud.enum";
+
+// "13-11-2026, 10:30" (24 h, hora de Chile), para las notas automáticas de la visita
+const fechaHoraChile = (fecha: Date) => fecha.toLocaleString('es-CL', {
+    timeZone:'America/Santiago', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hourCycle:'h23',
+});
 
 const RETENCION_DIAS_POR_DEFECTO = 365;
 // Ley 19.628: los datos necesarios para ejecutar un contrato se conservan; el admin usa este texto para responder al titular
@@ -33,10 +45,24 @@ export class SolicitudService{
         private readonly configService: ConfigService,
         private readonly auditoriaService: AuditoriaService,
         @InjectRepository(Reserva)
-        private readonly reservaRepository : Repository<Reserva>
+        private readonly reservaRepository : Repository<Reserva>,
+        @InjectRepository(NotaSolicitud)
+        private readonly notaRepository : Repository<NotaSolicitud>,
+        @InjectRepository(Cotizacion)
+        private readonly cotizacionRepository : Repository<Cotizacion>
     ){}
 
-    async crearSolicitud(crearSolicitudDto:CrearSolicitudDto):Promise<Solicitud>{
+    crearSolicitud(crearSolicitudDto:CrearSolicitudDto):Promise<Solicitud>{
+        return this.guardarNueva(crearSolicitudDto, OrigenSolicitud.WEB);
+    }
+
+    // Desde el panel la secretaria ya está hablando con el cliente: queda contactada y la visita, si se agenda, confirmada
+    crearDesdePanel(dto:CrearSolicitudPanelDto):Promise<Solicitud>{
+        return this.guardarNueva(dto, dto.origen);
+    }
+
+    private async guardarNueva(crearSolicitudDto:Omit<CrearSolicitudDto, 'aceptaPrivacidad'>, origen:OrigenSolicitud):Promise<Solicitud>{
+        const desdePanel = origen !== OrigenSolicitud.WEB;
         const modeloCasa = await this.modeloCasaRepostory.findOne({where:{id:crearSolicitudDto.id_modelo_casa, activo:true, proyecto:{activo:true}}});
 
         if(!modeloCasa){
@@ -53,6 +79,9 @@ export class SolicitudService{
             solicitud.consentimientoEn = new Date();
             solicitud.modeloCasa = modeloCasa;
             solicitud.visitaPreferida = visitaPreferida;
+            solicitud.visitaEstado = visitaPreferida ? (desdePanel ? EstadoVisita.CONFIRMADA : EstadoVisita.POR_CONFIRMAR) : null;
+            solicitud.origen = origen;
+            solicitud.contactado = desdePanel;
 
         return this.solicitudRepository.save(solicitud);
     }
@@ -82,13 +111,23 @@ export class SolicitudService{
 
     // Bandeja paginada: el filtro va en la consulta para que cada página traiga solo lo que se ve.
     // `pendientes` es el total sin contactar (contador de la pestaña), sin importar el filtro.
-    async listarSolicitudes({pagina, limite, filtro}:ListarSolicitudesDto){
+    async listarSolicitudes({pagina, limite, filtro, buscar}:ListarSolicitudesDto){
+        // Cada palabra debe aparecer en el nombre completo, el correo o el celular ("ana perez", "+5691234")
+        const terminos = buscar ? buscar.split(/\s+/).filter(Boolean).slice(0, 5) : [];
+        const coincide = terminos.length === 0 ? {} : {
+            id: Raw((columna) => `${columna} IN (SELECT s.id FROM solicitud s WHERE ${
+                terminos.map((_, i) => `concat_ws(' ', s.nombre, s.apellido, s.correo, s.celular) ILIKE :termino${i}`).join(' AND ')})`,
+                Object.fromEntries(terminos.map((t, i) => [`termino${i}`, `%${escaparLike(t)}%`]))),
+        };
         const where = {
-            pendientes:{contactado:false},
-            contactados:{contactado:true},
-            visita:{visitaPreferida:Not(IsNull())},
-            todas:{},
-        }[filtro];
+            ...{
+                pendientes:{contactado:false},
+                contactados:{contactado:true},
+                visita:{visitaPreferida:Not(IsNull())},
+                todas:{},
+            }[filtro],
+            ...coincide,
+        };
         const [[solicitudes, total], pendientes] = await Promise.all([
             this.solicitudRepository.findAndCount({
                 where, relations:{modeloCasa:true, reservas:true},
@@ -101,13 +140,89 @@ export class SolicitudService{
         return {solicitudes, total, pendientes, pagina, limite};
     }
 
-    async obtenerSolicitud(id:string):Promise<Solicitud>{
+    // Ficha del cliente: la solicitud con sus notas y cotizaciones (de quien las hizo solo el id y el nombre)
+    async obtenerSolicitud(id:string){
         // Las relaciones eager no se encadenan desde una relación pedida explícitamente: sin esto el proyecto llega sin ciudad
         const solicitud = await this.solicitudRepository.findOne({where:{id}, relations:{modeloCasa:{proyecto:{ciudad:{region:true}}}, reservas:true}});
         if(!solicitud){
             throw new NotFoundException('Solicitud no encontrada');
         }
-        return solicitud;
+        const autor = {relations:{usuario:true}, loadEagerRelations:false} as const;
+        const [notas, cotizaciones] = await Promise.all([
+            this.notaRepository.find({
+                where:{solicitud:{id}}, ...autor, order:{creadoEn:'DESC'},
+                select:{id:true, texto:true, creadoEn:true, usuario:{id:true, nombre:true}},
+            }),
+            this.cotizacionRepository.find({
+                where:{solicitud:{id}}, ...autor, order:{folio:'DESC'},
+                select:{id:true, folio:true, datos:true, creadoEn:true, usuario:{id:true, nombre:true}},
+            }),
+        ]);
+        return {...solicitud, notas, cotizaciones};
+    }
+
+    async agregarNota(id:string, texto:string, idUsuario:string):Promise<NotaSolicitud>{
+        if(!await this.solicitudRepository.exists({where:{id}})){
+            throw new NotFoundException('Solicitud no encontrada');
+        }
+        return this.notaRepository.save(this.notaRepository.create({texto, solicitud:{id}, usuario:{id:idUsuario}}));
+    }
+
+    // Agendar/reagendar (con nota automática, para no perder la fecha anterior) o cambiar el estado de la visita
+    async actualizarVisita(id:string, {fecha, estado}:ActualizarVisitaDto, idUsuario:string):Promise<Solicitud>{
+        if(!fecha && !estado){
+            throw new BadRequestException('Indica una fecha o un estado para la visita');
+        }
+        const solicitud = await this.solicitudRepository.findOne({where:{id}, relations:{modeloCasa:{proyecto:true}}});
+        if(!solicitud){
+            throw new NotFoundException('Solicitud no encontrada');
+        }
+        let nota: string | null = null;
+        if(fecha){
+            const nueva = this.validarVisita(fecha, solicitud.modeloCasa)!;
+            const anterior = solicitud.visitaPreferida;
+            nota = anterior
+                ? `Visita reagendada: del ${fechaHoraChile(anterior)} al ${fechaHoraChile(nueva)}.`
+                : `Visita agendada para el ${fechaHoraChile(nueva)}.`;
+            solicitud.visitaPreferida = nueva;
+            // Una fecha nueva se acuerda con el cliente: queda confirmada salvo que se indique otro estado
+            solicitud.visitaEstado = estado ?? EstadoVisita.CONFIRMADA;
+        }else{
+            if(!solicitud.visitaPreferida){
+                throw new BadRequestException('La solicitud no tiene una visita agendada');
+            }
+            solicitud.visitaEstado = estado!;
+        }
+        const asistencia = solicitud.visitaEstado === EstadoVisita.ASISTIO || solicitud.visitaEstado === EstadoVisita.NO_ASISTIO;
+        if(asistencia && solicitud.visitaPreferida!.getTime() > Date.now()){
+            throw new BadRequestException('La asistencia se marca después de la hora de la visita');
+        }
+        // Confirmar o registrar la asistencia implica haber hablado con el cliente
+        if(solicitud.visitaEstado !== EstadoVisita.POR_CONFIRMAR){
+            solicitud.contactado = true;
+        }
+        return this.solicitudRepository.manager.transaction(async (manager) => {
+            const guardada = await manager.save(solicitud);
+            if(nota){
+                await manager.save(manager.create(NotaSolicitud, {texto:nota, solicitud:{id}, usuario:{id:idUsuario}}));
+            }
+            return guardada;
+        });
+    }
+
+    // Congela el precio y el modelo leídos aquí y las condiciones elegidas; el folio lo asigna la BD
+    async emitirCotizacion(id:string, dto:CrearCotizacionDto, idUsuario:string):Promise<Cotizacion>{
+        const solicitud = await this.solicitudRepository.findOne({where:{id}, relations:{modeloCasa:true}});
+        if(!solicitud){
+            throw new NotFoundException('Solicitud no encontrada');
+        }
+        const modelo = solicitud.modeloCasa;
+        const datos: DatosCotizacion = {
+            nombreModelo:modelo.nombreModelo, precio:Number(modelo.precio), moneda:modelo.moneda, tipoOperacion:modelo.tipoOperacion,
+            uf:dto.uf ? {valor:dto.uf.valor, fecha:dto.uf.fecha} : null,
+            pie:dto.pie, tasa:dto.tasa, plazo:dto.plazo, validez:dto.validez, nota:dto.nota?.trim() ?? '',
+        };
+        return this.cotizacionRepository.save(this.cotizacionRepository.create({datos, solicitud:{id}, usuario:{id:idUsuario}}));
     }
 
     // CSV con ";" y BOM para que Excel en español lo abra con columnas y tildes correctas.
@@ -115,12 +230,14 @@ export class SolicitudService{
     async exportarCsv(usuario:{id:string, correo:string, rol:string}):Promise<string>{
         const solicitudes = await this.mostrarSolicitudes();
         const filas = [
-            ['Fecha', 'Nombre', 'Apellido', 'Correo', 'Celular', 'Proyecto', 'Modelo', 'Mensaje', 'Estado', 'Visita preferida'],
+            ['Fecha', 'Nombre', 'Apellido', 'Correo', 'Celular', 'Proyecto', 'Modelo', 'Mensaje', 'Estado', 'Visita preferida', 'Estado visita', 'Origen'],
             ...solicitudes.map((s) => [
                 s.creadoEn.toISOString(), s.nombre, s.apellido, s.correo, s.celular,
                 s.modeloCasa?.proyecto?.nombre ?? '', s.modeloCasa?.nombreModelo ?? '', s.mensaje ?? '',
                 s.contactado ? 'Contactado' : 'Pendiente',
                 s.visitaPreferida?.toISOString() ?? '',
+                s.visitaEstado ? ETIQUETA_VISITA[s.visitaEstado] : '',
+                ETIQUETA_ORIGEN[s.origen] ?? '',
             ]),
         ];
 

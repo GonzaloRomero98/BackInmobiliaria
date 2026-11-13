@@ -168,7 +168,9 @@ export class MetricasService{
         });
         return {
             proximos7Dias: total,
-            proximas: visitas.map((v) => ({id:v.id, nombre:v.nombre, apellido:v.apellido, visitaPreferida:v.visitaPreferida, ...modeloYProyecto(v)})),
+            proximas: visitas.map((v) => ({
+                id:v.id, nombre:v.nombre, apellido:v.apellido, visitaPreferida:v.visitaPreferida, visitaEstado:v.visitaEstado, ...modeloYProyecto(v),
+            })),
         };
     }
 }

@@ -43,6 +43,8 @@ export class AuditoriaMiddleware implements NestMiddleware{
                 correo: usuario?.correo ?? correoLogin,
                 rol: usuario?.rol ?? null,
                 ip: req.ip ?? null,
+                // Lo dejan los controladores cuando el recurso deja de existir (p. ej. el nombre de un proyecto eliminado)
+                detalle: res.locals?.auditoriaDetalle ?? null,
             });
         });
         next();

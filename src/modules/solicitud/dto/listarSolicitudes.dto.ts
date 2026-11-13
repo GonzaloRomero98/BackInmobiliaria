@@ -1,5 +1,5 @@
-import { Type } from "class-transformer";
-import { IsIn, IsInt, IsOptional, Max, Min } from "class-validator";
+import { Transform, Type } from "class-transformer";
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 export const FILTROS_SOLICITUD = ['pendientes', 'contactados', 'visita', 'todas'] as const;
 export type FiltroSolicitud = typeof FILTROS_SOLICITUD[number];
@@ -22,4 +22,11 @@ export class ListarSolicitudesDto{
     @IsOptional()
     @IsIn(FILTROS_SOLICITUD)
     filtro: FiltroSolicitud = 'todas';
+
+    // Nombre, apellido, correo o celular; con varias palabras deben aparecer todas ("ana perez")
+    @IsOptional()
+    @Transform(({value}) => typeof value === 'string' ? value.trim() : value)
+    @IsString()
+    @MaxLength(100)
+    buscar?: string;
 }

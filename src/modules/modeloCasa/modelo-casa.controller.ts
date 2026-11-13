@@ -1,5 +1,6 @@
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
 import { ModeloCasaService } from "./modelo-casa.service";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
 import { Roles } from "../auth/decorator/rol.decorator";
@@ -76,6 +77,14 @@ export class ModeloCasaController{
     @Roles(RolUsuario.ADMIN)
     despublicarModeloCasa(@Param('id', ParseUUIDPipe) id:string){
         return this.modeloCasaService.despublicarModeloCasa(id);
+    }
+
+    @Delete(':id/definitivo')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.ADMIN)
+    async eliminarModeloCasa(@Param('id', ParseUUIDPipe) id:string, @Res({passthrough:true}) res:Response){
+        // Ya no existe para buscar su nombre: la auditoría lo guarda en el detalle
+        res.locals.auditoriaDetalle = await this.modeloCasaService.eliminarModeloCasa(id);
     }
 
     @Post(':id/duplicar')

@@ -1,7 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Proyecto } from "./entities/proyecto.entity";
-import { IsNull, Not, Repository } from "typeorm";
+import { In, IsNull, Not, Repository } from "typeorm";
+import { ModeloCasa } from "../modeloCasa/entities/modeloCasa.entity";
+import { Solicitud } from "../solicitud/entities/solicitud.entity";
 import { Ciudad } from "../ubicacion/entities/ciudad.entity";
 import { CrearProyectoDto } from "./dto/crearProyecto.dto";
 import { ActualizarProyectoDto } from "./dto/actualizarProyecto.dto";
@@ -143,6 +145,31 @@ export class ProyectoService{
         if(!resultado.affected){
             throw new NotFoundException('El proyecto no fue encontrado');
         }
+    }
+
+    // Borrado definitivo del proyecto con sus modelos, solo si ninguno tiene solicitudes de clientes (mismo criterio que
+    // ModeloCasaService.eliminarModeloCasa: solicitudes y reservas no se pierden). La normativa se borra en cascada.
+    async eliminarProyecto(id:string): Promise<{nombre:string}>{
+        return this.proyectoRepository.manager.transaction(async (manager) => {
+            const proyecto = await manager.findOne(Proyecto, {where:{id}, select:{id:true, nombre:true}, loadEagerRelations:false});
+            if(!proyecto){
+                throw new NotFoundException('El proyecto no fue encontrado');
+            }
+            const modelos = await manager.find(ModeloCasa, {where:{proyecto:{id}}, select:{id:true, nombreModelo:true}, loadEagerRelations:false});
+            const conSolicitudes: string[] = [];
+            for(const modelo of modelos){
+                if(await manager.count(Solicitud, {where:{modeloCasa:{id:modelo.id}}}) > 0) conSolicitudes.push(`«${modelo.nombreModelo}»`);
+            }
+            if(conSolicitudes.length > 0){
+                const varios = conSolicitudes.length > 1;
+                throw new ConflictException(`No se puede eliminar «${proyecto.nombre}»: ${varios ? 'los modelos' : 'el modelo'} ${conSolicitudes.join(', ')} ${varios ? 'tienen' : 'tiene'} solicitudes de clientes. Despublica el proyecto para sacarlo del catálogo.`);
+            }
+            if(modelos.length > 0){
+                await manager.delete(ModeloCasa, {id:In(modelos.map((m) => m.id))});
+            }
+            await manager.delete(Proyecto, {id});
+            return {nombre:proyecto.nombre};
+        });
     }
 
     // Deshace el despublicar: el proyecto y sus modelos activos vuelven al catálogo

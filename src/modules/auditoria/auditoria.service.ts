@@ -15,7 +15,7 @@ export type RegistroAuditoria = Partial<Omit<Auditoria, 'id' | 'fecha' | 'secuen
 export type ProblemaCadena = 'sin_encadenar' | 'alterado' | 'faltan_anteriores' | 'enlace_roto';
 
 // "%", "_" y "\" se buscan como texto, no como comodines de LIKE
-const escaparLike = (texto: string) => texto.replace(/[\\%_]/g, '\\$&');
+export const escaparLike = (texto: string) => texto.replace(/[\\%_]/g, '\\$&');
 
 // Recalcula el hash de cada registro con la misma función del trigger y revisa los enlaces con el anterior.
 // Devuelve solo los registros con problemas (el primero es donde se rompe la cadena).
