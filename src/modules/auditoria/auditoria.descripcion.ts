@@ -83,6 +83,9 @@ export function describirAccion(r: RegistroDescribible, nombres: ReadonlyMap<str
     if (r.accion === 'RETENCION_SOLICITUDES') {
         return `Borrado automático por retención: ${r.detalle?.eliminadas ?? '?'} solicitudes con más de ${r.detalle?.dias ?? '?'} días`;
     }
+    if (r.accion === 'RETENCION_AUDITORIA') {
+        return `Borrado automático por retención: ${r.detalle?.eliminados ?? '?'} registros de auditoría con más de 2 años`;
+    }
     const ruta = analizarRuta(r.ruta);
     if (!ruta || !r.metodo) return null;
     if (r.metodo === 'POST' && ruta.patron === 'auth/login') return describirLogin(r.estado, r.exito);

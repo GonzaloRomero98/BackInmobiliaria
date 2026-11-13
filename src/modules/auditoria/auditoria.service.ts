@@ -24,6 +24,9 @@ const SQL_VERIFICAR = `
         SELECT a.secuencia, CASE
             WHEN a.secuencia IS NULL OR a.hash IS NULL THEN 'sin_encadenar'
             WHEN a.hash <> auditoria_hash(a) THEN 'alterado'
+            -- El registro más antiguo que queda es el inicio de la cadena: los anteriores los borró la retención
+            -- (el trigger solo deja borrar registros de más de 2 años; ver purgarVencidos)
+            WHEN lag(a.secuencia) OVER w IS NULL THEN NULL
             WHEN a.secuencia <> coalesce(lag(a.secuencia) OVER w, 0) + 1 THEN 'faltan_anteriores'
             WHEN a.hash_anterior IS DISTINCT FROM lag(a.hash) OVER w THEN 'enlace_roto'
         END AS problema
@@ -35,7 +38,21 @@ const SQL_VERIFICAR = `
     LIMIT 20`;
 
 // Ojo: ORDER BY con la columna calificada (a./x.); sin calificar, Postgres ordena por el alias de salida ::text ('99' > '113')
-const SQL_ULTIMO = `SELECT (SELECT count(*) FROM auditoria)::int AS total, a.secuencia::text AS secuencia, a.hash FROM auditoria a ORDER BY a.secuencia DESC LIMIT 1`;
+// Borra solo el comienzo de la cadena (secuencias anteriores al primer registro vigente): así nunca queda un hueco al medio,
+// aunque dos registros casi simultáneos tengan la fecha y la secuencia en distinto orden. Devuelve dónde quedó el corte.
+const SQL_PURGAR = `
+    WITH borrados AS (
+        DELETE FROM auditoria
+        WHERE fecha < auditoria_retencion_limite()
+          AND secuencia < coalesce((SELECT min(secuencia) FROM auditoria WHERE fecha >= auditoria_retencion_limite()), 9223372036854775807)
+        RETURNING secuencia, hash
+    )
+    SELECT count(*)::int AS eliminados,
+        (SELECT b.secuencia::text FROM borrados b ORDER BY b.secuencia DESC LIMIT 1) AS "hastaSecuencia",
+        (SELECT b.hash FROM borrados b ORDER BY b.secuencia DESC LIMIT 1) AS "hashCorte"
+    FROM borrados`;
+
+const SQL_ULTIMO =`SELECT (SELECT count(*) FROM auditoria)::int AS total, a.secuencia::text AS secuencia, a.hash FROM auditoria a ORDER BY a.secuencia DESC LIMIT 1`;
 
 @Injectable()
 export class AuditoriaService{
@@ -151,6 +168,21 @@ export class AuditoriaService{
             return eliminados;
         }catch(error){
             this.logger.error(`No se pudo vaciar la auditoría: ${(error as Error).message}`);
+            return 0;
+        }
+    }
+
+    // Retención (ISO 27701, Ley 21.719): borra los registros con más de 2 años. El plazo está fijo en la BD
+    // (migración RetencionAuditoria) y el trigger rechaza borrar cualquier registro más nuevo, aunque lo pida la API.
+    @Cron('30 3 * * *', {timeZone:'America/Santiago'})
+    async purgarVencidos(): Promise<number>{
+        try{
+            const [corte] = await this.dataSource.query(SQL_PURGAR) as {eliminados:number, hastaSecuencia:string | null, hashCorte:string | null}[];
+            // Deja constancia de hasta dónde llegó el borrado (último eslabón eliminado)
+            if(corte.eliminados > 0) await this.registrar({accion:'RETENCION_AUDITORIA', exito:true, detalle:{...corte}});
+            return corte.eliminados;
+        }catch(error){
+            this.logger.error(`No se pudo aplicar la retención de la auditoría: ${(error as Error).message}`);
             return 0;
         }
     }

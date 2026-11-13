@@ -195,6 +195,25 @@ describe('API (e2e, BD simulada)', () => {
     });
   });
 
+  // Rutas agregadas el 13-11: si alguien quita un guard o un @Roles, esta tabla falla
+  describe('permisos de las rutas de seguimiento y borrado definitivo', () => {
+    type Metodo = 'post' | 'patch' | 'delete';
+    const RUTAS: [Metodo, string][] = [
+      ['delete', `/api/proyectos/${UUID}/definitivo`],
+      ['delete', `/api/modeloCasa/${UUID}/definitivo`],
+      ['post', '/api/solicitudes/panel'],
+      ['post', `/api/solicitudes/${UUID}/notas`],
+      ['patch', `/api/solicitudes/${UUID}/visita`],
+      ['post', `/api/solicitudes/${UUID}/cotizaciones`],
+    ];
+
+    it.each(RUTAS)('%s %s sin sesión -> 401', (metodo, ruta) => http()[metodo](ruta).send({}).expect(401));
+
+    // Borrar para siempre es solo del ADMIN
+    it.each(RUTAS.slice(0, 2))('%s %s con SECRETARIO -> 403', (metodo, ruta) =>
+      http()[metodo](ruta).set(auth(secretarioToken)).expect(403));
+  });
+
   describe('estado de la base de datos y documentación', () => {
     it('GET /api/health -> 200 con la BD conectada', async () => {
       const res = await http().get('/api/health').expect(200);

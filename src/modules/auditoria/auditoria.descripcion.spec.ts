@@ -58,6 +58,8 @@ describe('describirAccion', () => {
       .toBe('Exportó las solicitudes a Excel (12)');
     expect(describirAccion(registro(null, null, { accion: 'RETENCION_SOLICITUDES', detalle: { dias: 365, eliminadas: 3 } }), nombres))
       .toBe('Borrado automático por retención: 3 solicitudes con más de 365 días');
+    expect(describirAccion(registro(null, null, { accion: 'RETENCION_AUDITORIA', detalle: { eliminados: 40 } }), nombres))
+      .toBe('Borrado automático por retención: 40 registros de auditoría con más de 2 años');
   });
 
   it('null para acciones que no están en la tabla (la vista muestra la técnica)', () => {

@@ -151,6 +151,45 @@ describe('Borrado diario de la auditoría (PostgreSQL real)', () => {
   });
 });
 
+describe('Retención de la auditoría: 2 años (PostgreSQL real)', () => {
+  it('borra solo el comienzo de la cadena con más de 2 años, la verificación sigue íntegra y lo reciente no se puede borrar', async () => {
+    const auditoria = new AuditoriaService(ds.getRepository(Auditoria), ds.getRepository(Proyecto),
+      ds.getRepository(ModeloCasa), ds.getRepository(Usuario), ds);
+    // Tabla limpia y 5 registros; se envejecen el 1, el 2 y el 4 (el 4 queda detrás del 3, que es reciente)
+    await ds.query('ALTER TABLE auditoria DISABLE TRIGGER auditoria_sin_truncate');
+    await ds.query('TRUNCATE auditoria');
+    await ds.query('ALTER TABLE auditoria ENABLE TRIGGER auditoria_sin_truncate');
+    for (let i = 1; i <= 5; i++) await auditoria.registrar({ accion: `PRUEBA_${i}`, exito: true });
+    const viejos = ['1', '2', '4'];
+    // Envejecerlos cambia su hash: se recalcula para que la cadena siga calzando
+    await ds.query('ALTER TABLE auditoria DISABLE TRIGGER auditoria_sin_cambios');
+    await ds.query(`UPDATE auditoria SET fecha = now() - interval '3 years' WHERE secuencia = ANY($1::bigint[])`, [viejos]);
+    for (const s of ['1', '2', '3', '4', '5']) {
+      await ds.query(`UPDATE auditoria a SET hash_anterior = (SELECT hash FROM auditoria WHERE secuencia = a.secuencia - 1) WHERE secuencia = $1`, [s]);
+      await ds.query('UPDATE auditoria a SET hash = auditoria_hash(a) WHERE secuencia = $1', [s]);
+    }
+    await ds.query('ALTER TABLE auditoria ENABLE TRIGGER auditoria_sin_cambios');
+    expect((await auditoria.verificar()).integra).toBe(true);
+
+    // Un registro reciente sigue protegido aunque lo pida la propia API; TRUNCATE también
+    await expect(ds.query('DELETE FROM auditoria WHERE secuencia = 3')).rejects.toThrow('solo inserción');
+    await expect(ds.query('TRUNCATE auditoria')).rejects.toThrow('solo inserción');
+
+    // Solo el 1 y el 2: el 4 es viejo, pero borrarlo dejaría un hueco detrás del 3
+    expect(await auditoria.purgarVencidos()).toBe(2);
+    const quedan = await ds.getRepository(Auditoria).find({ order: { secuencia: 'ASC' } });
+    expect(quedan.map((r) => r.accion)).toEqual(['PRUEBA_3', 'PRUEBA_4', 'PRUEBA_5', 'RETENCION_AUDITORIA']);
+    expect(quedan[3].detalle).toMatchObject({ eliminados: 2, hastaSecuencia: '2' });
+    expect(await auditoria.verificar()).toMatchObject({ integra: true, problemas: [] });
+
+    // Borrar un registro del medio (saltándose el trigger) se sigue detectando
+    await ds.query('ALTER TABLE auditoria DISABLE TRIGGER auditoria_sin_cambios');
+    await ds.query('DELETE FROM auditoria WHERE secuencia = 4');
+    await ds.query('ALTER TABLE auditoria ENABLE TRIGGER auditoria_sin_cambios');
+    expect((await auditoria.verificar()).problemas).toEqual([{ secuencia: '5', problema: 'faltan_anteriores' }]);
+  });
+});
+
 describe('RF-14 Privacidad y retención (PostgreSQL real)', () => {
   it('supresión por correo sin distinguir mayúsculas; 409 con reserva activa; vuelve a ser eliminable al anular', async () => {
     const modelo = await crearModelo(3);

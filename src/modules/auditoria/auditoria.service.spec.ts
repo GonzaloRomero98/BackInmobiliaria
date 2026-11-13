@@ -87,6 +87,24 @@ describe('AuditoriaService', () => {
     });
   });
 
+  describe('purgarVencidos', () => {
+    it('deja constancia del corte cuando borra registros', async () => {
+      dataSource.query.mockResolvedValue([{ eliminados: 40, hastaSecuencia: '40', hashCorte: 'abc' }]);
+      await expect(service.purgarVencidos()).resolves.toBe(40);
+      expect(auditoriaRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        accion: 'RETENCION_AUDITORIA', detalle: { eliminados: 40, hastaSecuencia: '40', hashCorte: 'abc' },
+      }));
+    });
+
+    it('sin registros vencidos no escribe nada; un error de la BD no tumba la API', async () => {
+      dataSource.query.mockResolvedValue([{ eliminados: 0, hastaSecuencia: null, hashCorte: null }]);
+      await expect(service.purgarVencidos()).resolves.toBe(0);
+      dataSource.query.mockRejectedValue(new Error('BD caída'));
+      await expect(service.purgarVencidos()).resolves.toBe(0);
+      expect(auditoriaRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
   describe('verificar', () => {
     it('íntegra si la consulta no encuentra problemas; informa el último eslabón', async () => {
       dataSource.query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ total: 7, secuencia: '7', hash: 'abc' }]);
