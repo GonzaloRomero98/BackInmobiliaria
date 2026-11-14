@@ -38,7 +38,7 @@ export class ModeloCasaController{
         return this.modeloCasaService.listarModelosAdmin();
     }
 
-    // Declarada antes de admin/:id para que "nombre-disponible" no se tome como un id
+    // Va antes de admin/:id para que "nombre-disponible" no se tome como un id.
     @Get('admin/nombre-disponible')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
@@ -76,7 +76,7 @@ export class ModeloCasaController{
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
     async eliminarModeloCasa(@Param('id', ParseUUIDPipe) id:string, @Res({passthrough:true}) res:Response){
-        // Ya no existe para buscar su nombre: la auditoría lo guarda en el detalle
+        // Después de borrarlo ya no se puede buscar su nombre, así que queda en el detalle de la auditoría.
         res.locals.auditoriaDetalle = await this.modeloCasaService.eliminarModeloCasa(id);
     }
 

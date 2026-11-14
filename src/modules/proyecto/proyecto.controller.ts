@@ -28,7 +28,7 @@ export class PoryectoController{
         return this.proyectoService.mostrarProyectos(id_ciudad);
     }
 
-    // Declarada antes de ':id' para que "admin" no se tome como un id
+    // Va antes de ':id' para que "admin" no se tome como un id.
     @Get('admin')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
@@ -59,7 +59,7 @@ export class PoryectoController{
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
     async eliminarProyecto(@Param('id', new ParseUUIDPipe) id:string, @Res({passthrough:true}) res:Response){
-        // Ya no existe para buscar su nombre: la auditoría lo guarda en el detalle
+        // Después de borrarlo ya no se puede buscar su nombre, así que queda en el detalle de la auditoría.
         res.locals.auditoriaDetalle = await this.proyectoService.eliminarProyecto(id);
     }
 

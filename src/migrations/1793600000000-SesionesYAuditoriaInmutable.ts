@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-// ISO 27001 A.5.17: fecha del último cambio de contraseña (invalida los tokens anteriores).
-// ISO 27001 A.8.15: la auditoría es de solo inserción; nadie (ni la propia API) puede editarla ni borrarla.
+// ISO 27001 A.5.17: fecha del último cambio de contraseña, para invalidar los tokens anteriores.
+// ISO 27001 A.8.15: la auditoría queda de solo inserción y nadie puede editarla ni borrarla.
 export class SesionesYAuditoriaInmutable1793600000000 implements MigrationInterface {
     name = 'SesionesYAuditoriaInmutable1793600000000'
 

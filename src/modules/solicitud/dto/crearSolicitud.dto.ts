@@ -1,7 +1,7 @@
 import { Transform } from "class-transformer";
 import { Equals, IsEmail, IsISO8601, IsNotEmpty, IsOptional, IsString, IsUUID, Matches, MaxLength } from "class-validator";
 
-// Acepta "9 1234 5678", "912345678", "+56 9 1234-5678"... y lo deja como +569XXXXXXXX para wa.me
+// Acepta formatos como "9 1234 5678" o "+56 9 1234-5678" y los deja como +569XXXXXXXX.
 export function normalizarCelular(valor: string): string {
     const digitos = valor.replace(/\D/g, '');
     if (/^569\d{8}$/.test(digitos)) return '+' + digitos;
@@ -28,16 +28,15 @@ export class CrearSolicitudDto{
     @Matches(/^\+569\d{8}$/, {message:'El celular debe ser un móvil chileno: +56 9 XXXX XXXX'})
     celular:string;
 
-    // Formulario público: sin tope, un bot podría guardar ~100 KB por solicitud
     @IsOptional()
     @IsString()
+    // El formulario es público: sin este tope un bot podría guardar textos enormes.
     @MaxLength(2000)
     mensaje?:string;
     
     @IsUUID()
     id_modelo_casa:string;
 
-    // ISO 8601 con zona horaria (el navegador la envía en UTC); el servicio valida el rango
     @IsOptional()
     @IsISO8601({strict:true})
     visitaPreferida?:string;

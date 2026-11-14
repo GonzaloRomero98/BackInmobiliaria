@@ -8,7 +8,7 @@ export interface LugarCercano {
     categoria: CategoriaEntorno;
     latitud: number;
     longitud: number;
-    distancia: number; // metros
+    distancia: number;
 }
 
 export interface Entorno {
@@ -19,7 +19,7 @@ export interface Entorno {
 
 const CATEGORIAS: CategoriaEntorno[] = ['transporte', 'educacion', 'salud', 'comercio', 'areasVerdes'];
 
-// Servidores públicos de la API Overpass (OpenStreetMap); se prueban en orden porque suelen saturarse
+// Servidores públicos de Overpass. Se prueban en orden porque suelen saturarse.
 const SERVIDORES_OVERPASS = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
@@ -103,7 +103,7 @@ out center tags 400;`;
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                         'Accept': 'application/json',
-                        // Overpass rechaza (406) peticiones sin un User-Agent identificable
+                        // Overpass rechaza las peticiones sin un User-Agent identificable.
                         'User-Agent': 'Inmocap/1.0 (portal inmobiliario)',
                     },
                     body: `data=${encodeURIComponent(consulta)}`,

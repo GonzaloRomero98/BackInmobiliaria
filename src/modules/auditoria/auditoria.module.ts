@@ -10,7 +10,6 @@ import { Usuario } from "../usuario/entities/usuario.entity";
 
 @Global()
 @Module({
-    // Proyecto, ModeloCasa y Usuario: solo para mostrar sus nombres en las descripciones
     imports:[TypeOrmModule.forFeature([Auditoria, Proyecto, ModeloCasa, Usuario]), AuthModule],
     controllers:[AuditoriaController],
     providers:[AuditoriaService],

@@ -42,7 +42,6 @@ describe('ModeloCasaService', () => {
     caracteristicasID: [],
   });
 
-  // Lectura con bloqueo dentro de la transacción de actualizarModeloCasa; por defecto, la misma fila que leyó findOne
   let bloqueo: { findOne: jest.Mock; save: jest.Mock };
 
   beforeEach(() => {
@@ -292,7 +291,6 @@ describe('ModeloCasaService', () => {
       });
       expect(guardado.id).toBeUndefined();
       expect(guardado.creadoEn).toBeUndefined();
-      // Fotos nuevas (sin id) con las mismas URLs: la cascada las inserta en la misma transacción
       expect(guardado.fotos).toEqual([
         expect.objectContaining({ urlImagen: 'https://x/1.jpg', orden: 0 }),
         expect.objectContaining({ urlImagen: 'https://x/2.jpg', orden: 1 }),

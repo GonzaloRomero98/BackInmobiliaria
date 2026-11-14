@@ -34,7 +34,6 @@ export class ModeloCasa{
     @Column({name:'tipo_vivienda', type:'varchar', length:20, default:TipoVivienda.CASA})
     tipoVivienda:string;
 
-    // Obligatoria solo en casas (un departamento no tiene terreno propio); se valida en el servicio
     @Column({name:'superficie_terreno', type:'decimal', nullable:true, transformer:decimalANumero})
     superficieTerreno:number | null;
 
@@ -44,7 +43,6 @@ export class ModeloCasa{
     @Column({type:'varchar', length:3})
     moneda:string;
 
-    // Monto mensual en CLP; null = no aplica o no informado
     @Column({name:'gastos_comunes', type:'int', nullable:true})
     gastosComunes:number | null;
 
@@ -63,15 +61,14 @@ export class ModeloCasa{
     @Column({name:'img_principal', type:'varchar',nullable:false})
     imgPrincipal:string;
 
-    // Calculado por calcularEstado() desde los contadores; no se edita a mano. "activo" indica publicado o borrador
+    // Lo calcula calcularEstado() desde los contadores, no se edita a mano.
     @Column({type:'varchar', length:20, default:EstadoModelo.DISPONIBLE})
     estado:string;
 
-    // Casas de este modelo en el proyecto (las define el admin)
     @Column({type:'int', default:1})
     unidades:number;
 
-    // Contadores: solo los modifica ReservaService
+    // Estos contadores solo los modifica ReservaService.
     @Column({name:'unidades_reservadas', type:'int', default:0})
     unidadesReservadas:number;
 
@@ -96,7 +93,6 @@ export class ModeloCasa{
     })
     caracteristicas: Caracteristica[];
 
-    // cascade insert: al duplicar, el modelo y su galería se guardan en la misma transacción
     @OneToMany(()=> GaleriaModeloCasa,(foto) => foto.modeloCasa,{eager:true, cascade:['insert']})
     fotos:GaleriaModeloCasa[];
 }

@@ -4,7 +4,7 @@ export class Inicial1792961995584 implements MigrationInterface {
     name = 'Inicial1792961995584'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
-        // Las BD creadas antes con `synchronize` ya tienen este esquema: solo se registra la migración.
+        // Las BD creadas antes con synchronize ya tienen este esquema, así que solo se registra la migración.
         if (await queryRunner.hasTable("usuario")) {
             return;
         }

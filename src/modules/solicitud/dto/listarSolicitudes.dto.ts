@@ -4,7 +4,6 @@ import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-va
 export const FILTROS_SOLICITUD = ['pendientes', 'contactados', 'visita', 'todas'] as const;
 export type FiltroSolicitud = typeof FILTROS_SOLICITUD[number];
 
-// Query string de la bandeja: GET /solicitudes?pagina=2&limite=20&filtro=pendientes
 export class ListarSolicitudesDto{
     @IsOptional()
     @Type(() => Number)
@@ -23,7 +22,6 @@ export class ListarSolicitudesDto{
     @IsIn(FILTROS_SOLICITUD)
     filtro: FiltroSolicitud = 'todas';
 
-    // Nombre, apellido, correo o celular; con varias palabras deben aparecer todas ("ana perez")
     @IsOptional()
     @Transform(({value}) => typeof value === 'string' ? value.trim() : value)
     @IsString()

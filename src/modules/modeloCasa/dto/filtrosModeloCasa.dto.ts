@@ -7,7 +7,7 @@ export type OrdenModelo = typeof ORDENES_MODELO[number];
 
 const aNumero = () => Type(() => Number);
 
-// Filtros del buscador (query string). Los mínimos de dormitorios/baños son "N o más".
+// Filtros del buscador. Dormitorios y baños son mínimos (N o más).
 export class FiltrosModeloCasaDto{
     @IsOptional()
     @IsUUID()
@@ -29,7 +29,6 @@ export class FiltrosModeloCasaDto{
     @IsPositive()
     id_ciudad?:number;
 
-    // Moneda en que se expresan precioMin/precioMax (solo se comparan modelos en esa moneda)
     @IsOptional()
     @IsEnum(Moneda)
     moneda?:Moneda;

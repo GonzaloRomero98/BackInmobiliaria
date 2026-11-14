@@ -13,9 +13,10 @@ import { AuditoriaEncadenada1793800000000 } from "./1793800000000-AuditoriaEncad
 import { EventosModelo1793900000000 } from "./1793900000000-EventosModelo";
 import { SeguimientoSolicitudes1794000000000 } from "./1794000000000-SeguimientoSolicitudes";
 import { RetencionAuditoria1794100000000 } from "./1794100000000-RetencionAuditoria";
+import { SesionesCerradas1794200000000 } from "./1794200000000-SesionesCerradas";
+import { ReservaSinCascada1794300000000 } from "./1794300000000-ReservaSinCascada";
 
-// Registro explícito de migraciones (en orden). Al generar una nueva con
-// `npm run migration:generate -- src/migrations/<Nombre>`, agrégala a esta lista.
+// Las migraciones se registran a mano y en orden. Al generar una nueva hay que agregarla aquí.
 export const migraciones: (new () => MigrationInterface)[] = [
     Inicial1792961995584,
     AuditoriaYConsentimiento1792962300589,
@@ -31,4 +32,6 @@ export const migraciones: (new () => MigrationInterface)[] = [
     EventosModelo1793900000000,
     SeguimientoSolicitudes1794000000000,
     RetencionAuditoria1794100000000,
+    SesionesCerradas1794200000000,
+    ReservaSinCascada1794300000000,
 ];

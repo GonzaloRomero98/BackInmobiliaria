@@ -29,11 +29,10 @@ export class Solicitud{
     @Column({name:'consentimiento_en', type:'timestamp', nullable:true})
     consentimientoEn: Date | null;
 
-    // Fecha y hora en que la persona quiere visitar la sala de ventas (opcional)
     @Column({name:'visita_preferida', type:'timestamptz', nullable:true})
     visitaPreferida: Date | null;
 
-    // null si no hay visita; al reagendar cambia visitaPreferida y queda una nota automática con la fecha anterior
+    // null si no hay visita. Al reagendar queda una nota con la fecha anterior.
     @Column({name:'visita_estado', type:'varchar', length:20, nullable:true})
     visitaEstado: EstadoVisita | null;
 

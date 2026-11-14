@@ -14,7 +14,7 @@ import { RolUsuario } from "../rol/rol.enum";
 export class S3Controller{
     constructor(private readonly s3Service:S3Service){}
 
-    // El SECRETARIO solo puede subir su foto de perfil; el resto de carpetas es del ADMIN
+    // El SECRETARIO solo puede subir su foto de perfil. Las demás carpetas son del ADMIN.
     @Post('presigned-url')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN, RolUsuario.SECRETARIO)

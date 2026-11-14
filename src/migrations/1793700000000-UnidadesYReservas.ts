@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-// Los estados manuales previos eran datos de prueba: todo modelo queda con 1 unidad y DISPONIBLE
+// Los estados anteriores eran datos de prueba, así que cada modelo queda con 1 unidad disponible.
 export class UnidadesYReservas1793700000000 implements MigrationInterface {
     name = 'UnidadesYReservas1793700000000'
 

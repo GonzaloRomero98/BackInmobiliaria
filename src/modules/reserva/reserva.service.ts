@@ -18,7 +18,7 @@ export class ReservaService{
                 throw new NotFoundException('Solicitud no encontrada');
             }
 
-            // Primero el bloqueo y después las revisiones: así dos POST para la misma solicitud se serializan
+            // Primero se bloquea el modelo y después se revisa, así dos reservas para la misma solicitud no pasan al mismo tiempo.
             const modelo = await this.bloquearModelo(manager, solicitud.modeloCasa.id);
             if(await manager.exists(Reserva, {where:{solicitud:{id:solicitud.id}, estado:In(ESTADOS_ACTIVOS)}})){
                 throw new ConflictException('La solicitud ya tiene una reserva activa');
@@ -46,7 +46,7 @@ export class ReservaService{
                 throw new NotFoundException('Reserva no encontrada');
             }
 
-            // El estado se relee con el modelo ya bloqueado: otra transacción pudo cerrarla mientras esperábamos
+            // El estado se vuelve a leer con el modelo bloqueado, porque otra transacción pudo cerrarla mientras tanto.
             const modelo = await this.bloquearModelo(manager, reserva.solicitud.modeloCasa.id);
             const actual = await manager.findOne(Reserva, {where:{id}, loadEagerRelations:false});
             if(actual?.estado !== EstadoReserva.RESERVADA || estado === EstadoReserva.RESERVADA){
@@ -65,7 +65,7 @@ export class ReservaService{
         });
     }
 
-    // Sin relaciones eager: Postgres no permite FOR UPDATE sobre el lado nulo de un LEFT JOIN
+    // Sin relaciones eager, porque Postgres no permite FOR UPDATE sobre el lado nulo de un LEFT JOIN.
     private async bloquearModelo(manager:EntityManager, id:string):Promise<ModeloCasa>{
         const modelo = await manager.findOne(ModeloCasa, {where:{id}, lock:{mode:'pessimistic_write'}, loadEagerRelations:false});
         if(!modelo){

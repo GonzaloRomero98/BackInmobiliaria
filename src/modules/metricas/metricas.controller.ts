@@ -21,7 +21,7 @@ export class MetricasController{
         return this.metricasService.resumen();
     }
 
-    // Público (lo llama la web al escanear el QR o abrir la RA); el límite por IP evita inflar la métrica
+    // Es público porque lo llama la web. El límite por IP evita inflar la métrica.
     @Post('eventos')
     @HttpCode(204)
     @Throttle({default:{limit:20, ttl:60_000}})

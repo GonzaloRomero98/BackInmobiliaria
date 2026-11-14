@@ -34,7 +34,7 @@ export class UsuarioController{
         return sinContrasena(await this.usuarioService.crearUsuario(crearUsuarioDto));
     }
 
-    // Rutas "me" declaradas antes de ':id' para que Nest no las tome como un id
+    // Las rutas "me" van antes de ':id' para que no se tomen como un id.
     @Get('me')
     @Roles(RolUsuario.ADMIN, RolUsuario.SECRETARIO)
     miPerfil(@Req() req:RequestConUsuario){
@@ -47,10 +47,9 @@ export class UsuarioController{
         return this.usuarioService.actualizarPerfil(req.user.id, dto);
     }
 
-    // Cualquier usuario del panel cambia su propia contraseña indicando la actual
+    // El cambio invalida los tokens anteriores, así que se deja uno nuevo en la cookie para no cerrar esta sesión.
     @Patch('me/contrasena')
     @Roles(RolUsuario.ADMIN, RolUsuario.SECRETARIO)
-    // El cambio invalida todos los tokens anteriores: se pone uno nuevo en la cookie para que esta sesión siga abierta
     @HttpCode(204)
     async cambiarContrasena(@Req() req:RequestConUsuario, @Body() dto:CambiarContrasenaDto, @Res({passthrough:true}) res:Response){
         await this.usuarioService.cambiarContrasena(req.user.id, dto);

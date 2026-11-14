@@ -1,7 +1,7 @@
 import { Transform, Type } from "class-transformer";
 import { IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
-// Módulo -> prefijos de ruta y acciones internas (registradas por los servicios, sin ruta) que le pertenecen
+// Prefijos de ruta y acciones internas que pertenecen a cada módulo.
 export const MODULOS_AUDITORIA = {
     sesion: { rutas: ['/api/auth/'], acciones: [] },
     proyectos: { rutas: ['/api/proyectos'], acciones: [] },
@@ -13,7 +13,6 @@ export const MODULOS_AUDITORIA = {
 } as const;
 export type ModuloAuditoria = keyof typeof MODULOS_AUDITORIA;
 
-// Query string del visor: GET /auditoria?pagina=1&modulo=proyectos&soloRechazados=true&desde=...&hasta=...
 export class ListarAuditoriaDto{
     @IsOptional()
     @Type(() => Number)
@@ -28,7 +27,6 @@ export class ListarAuditoriaDto{
     @Max(200)
     limite: number = 50;
 
-    // Parte del correo (sin distinguir mayúsculas): incluye los correos intentados en logins fallidos
     @IsOptional()
     @Transform(({value}) => typeof value === 'string' ? value.trim() : value)
     @IsString()
@@ -44,7 +42,6 @@ export class ListarAuditoriaDto{
     @IsBoolean()
     soloRechazados: boolean = false;
 
-    // Instantes ISO 8601 (el navegador envía la medianoche local en UTC): desde incluido, hasta excluido
     @IsOptional()
     @IsISO8601({strict:true})
     desde?: string;

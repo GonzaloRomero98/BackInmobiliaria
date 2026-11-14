@@ -1,10 +1,9 @@
-// "12.345.678-k" -> "12345678-K"
 export function normalizarRut(valor: string): string {
     const limpio = valor.replace(/[.\s-]/g, '').toUpperCase();
     return limpio.length < 2 ? limpio : `${limpio.slice(0, -1)}-${limpio.slice(-1)}`;
 }
 
-// Recibe un RUT ya normalizado; valida el dígito verificador (módulo 11)
+// Valida el dígito verificador con módulo 11.
 export function rutValido(rut: string): boolean {
     const partes = /^(\d{7,8})-([\dK])$/.exec(rut);
     if (!partes) return false;

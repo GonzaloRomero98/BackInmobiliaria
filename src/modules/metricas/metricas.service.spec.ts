@@ -6,7 +6,7 @@ import { Proyecto } from '../proyecto/entities/proyecto.entity';
 import { Reserva } from '../reserva/entities/reserva.entity';
 import { EventoModelo, TipoEventoModelo } from './entities/eventoModelo.entity';
 
-// Jueves 12 de noviembre de 2026, 15:00 (hora local); su semana empieza el lunes 9
+// Jueves 12 de noviembre de 2026 a las 15:00. Su semana empieza el lunes 9.
 const AHORA = new Date(2026, 10, 12, 15, 0);
 
 describe('MetricasService', () => {
@@ -18,7 +18,6 @@ describe('MetricasService', () => {
 
   function servicio(unidades: Record<string, string | null>) {
     const encadenables = ['innerJoin', 'select', 'addSelect', 'where', 'groupBy', 'addGroupBy', 'orderBy', 'limit'];
-    // Semanas con solicitudes: la actual (lunes 9 nov) y la de hace 2 (lunes 26 oct)
     const qbSemanas = constructorQb(encadenables, { getRawMany: jest.fn().mockResolvedValue([
       { semana: new Date(2026, 10, 9), solicitudes: '4' }, { semana: new Date(2026, 9, 26), solicitudes: '2' },
     ]) });
@@ -27,11 +26,9 @@ describe('MetricasService', () => {
 
     const solicitudes = {
       count: jest.fn(async (o?: { where?: object }) => (o?.where ? 2 : 10)),
-      // Pendientes (seguimiento) o visitas próximas, según la consulta
       findAndCount: jest.fn(async ({ where }) => where.contactado === false
         ? [[{ id: 'p1', nombre: 'Luis', apellido: 'Soto', celular: '+56911111111', creadoEn: new Date(2026, 10, 2), visitaPreferida: null, modeloCasa: { nombreModelo: 'Cordillera', proyecto: { nombre: 'Vista Andes' } } }], 4]
         : [[{ id: 's1', nombre: 'Ana', apellido: 'Pérez', visitaPreferida: new Date(2026, 10, 13, 11), modeloCasa: { nombreModelo: 'Aurora', proyecto: { nombre: 'Los Robles' } } }], 3]),
-      // El orden de las llamadas es el del Promise.all: primero por semana, luego más consultados
       createQueryBuilder: jest.fn().mockReturnValueOnce(qbSemanas).mockReturnValueOnce(qbTop),
     };
     const modelos = {
@@ -143,7 +140,6 @@ describe('MetricasService', () => {
     expect(solicitudes.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ where: { contactado: false }, order: { creadoEn: 'ASC' }, take: 5 }));
     expect(solicitudes.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ take: 8, order: { visitaPreferida: 'ASC' } }));
     expect(reservas.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ where: { estado: 'RESERVADA' }, order: { creadoEn: 'ASC' } }));
-    // "Nuevas hoy" cuenta desde la medianoche
     expect(solicitudes.count).toHaveBeenCalledWith({ where: { creadoEn: expect.objectContaining({ _value: new Date(2026, 10, 12) }) } });
   });
 

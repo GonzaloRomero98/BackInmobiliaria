@@ -9,16 +9,14 @@ import { Usuario } from "../usuario/entities/usuario.entity";
 import { analizarRuta, describirAccion, RECURSOS_CON_NOMBRE, RecursoConNombre } from "./auditoria.descripcion";
 import { ListarAuditoriaDto, MODULOS_AUDITORIA } from "./dto/listarAuditoria.dto";
 
-// La cadena la escriben los triggers de la BD; estos campos no se aceptan desde la API
 export type RegistroAuditoria = Partial<Omit<Auditoria, 'id' | 'fecha' | 'secuencia' | 'hashAnterior' | 'hash'>> & Pick<Auditoria, 'accion' | 'exito'>;
 
 export type ProblemaCadena = 'sin_encadenar' | 'alterado' | 'faltan_anteriores' | 'enlace_roto';
 
-// "%", "_" y "\" se buscan como texto, no como comodines de LIKE
+// Para que %, _ y \ se busquen como texto y no como comodines de LIKE.
 export const escaparLike = (texto: string) => texto.replace(/[\\%_]/g, '\\$&');
 
-// Recalcula el hash de cada registro con la misma función del trigger y revisa los enlaces con el anterior.
-// Devuelve solo los registros con problemas (el primero es donde se rompe la cadena).
+// Recalcula el hash de cada registro con la misma función del trigger y devuelve solo los que tienen problemas.
 const SQL_VERIFICAR = `
     SELECT secuencia::text AS secuencia, problema FROM (
         SELECT a.secuencia, CASE
@@ -37,9 +35,8 @@ const SQL_VERIFICAR = `
     ORDER BY x.secuencia NULLS FIRST
     LIMIT 20`;
 
-// Ojo: ORDER BY con la columna calificada (a./x.); sin calificar, Postgres ordena por el alias de salida ::text ('99' > '113')
-// Borra solo el comienzo de la cadena (secuencias anteriores al primer registro vigente): así nunca queda un hueco al medio,
-// aunque dos registros casi simultáneos tengan la fecha y la secuencia en distinto orden. Devuelve dónde quedó el corte.
+// Borra solo el comienzo de la cadena, para que nunca quede un hueco al medio.
+// El ORDER BY usa la columna calificada (a./x.) porque sin calificar Postgres ordena por el alias de texto ('99' > '113').
 const SQL_PURGAR = `
     WITH borrados AS (
         DELETE FROM auditoria
@@ -70,7 +67,7 @@ export class AuditoriaService{
         private readonly dataSource: DataSource,
     ){}
 
-    // Nunca lanza: un fallo al auditar no debe tumbar la petición, pero queda en el log.
+    // Nunca lanza error: un fallo al auditar no debe botar la petición, pero queda en el log.
     async registrar(registro: RegistroAuditoria): Promise<void>{
         this.logger.log(`${registro.accion} exito=${registro.exito} usuario=${registro.correo ?? '-'} ip=${registro.ip ?? '-'}`);
         try{
@@ -95,7 +92,6 @@ export class AuditoriaService{
         };
     }
 
-    // Filtros comunes + (si hay módulo) una condición por cada prefijo de ruta o acción interna del módulo (OR)
     private condiciones({correo, soloRechazados, desde, hasta, modulo}: ListarAuditoriaDto): FindOptionsWhere<Auditoria> | FindOptionsWhere<Auditoria>[]{
         const base: FindOptionsWhere<Auditoria> = {};
         if(correo) base.correo = ILike(`%${escaparLike(correo)}%`);
@@ -113,7 +109,6 @@ export class AuditoriaService{
         ];
     }
 
-    // Nombre actual de los proyectos, modelos y usuarios que aparecen en la página (una consulta por tipo)
     private async nombresDe(registros: Auditoria[]): Promise<Map<string, string>>{
         const ids: Record<RecursoConNombre, Set<string>> = {proyectos: new Set(), modeloCasa: new Set(), usuarios: new Set()};
         for(const r of registros){
@@ -149,13 +144,11 @@ export class AuditoriaService{
         };
     }
 
-    // Retención (ISO 27701, Ley 21.719): borra los registros con más de 2 años. El plazo está fijo en la BD
-    // (migración RetencionAuditoria) y el trigger rechaza borrar cualquier registro más nuevo, aunque lo pida la API.
+    // Borra los registros con más de 2 años. El plazo está fijo en la BD y el trigger impide borrar registros más nuevos.
     @Cron('30 3 * * *', {timeZone:'America/Santiago'})
     async purgarVencidos(): Promise<number>{
         try{
             const [corte] = await this.dataSource.query(SQL_PURGAR) as {eliminados:number, hastaSecuencia:string | null, hashCorte:string | null}[];
-            // Deja constancia de hasta dónde llegó el borrado (último eslabón eliminado)
             if(corte.eliminados > 0) await this.registrar({accion:'RETENCION_AUDITORIA', exito:true, detalle:{...corte}});
             return corte.eliminados;
         }catch(error){
@@ -164,8 +157,8 @@ export class AuditoriaService{
         }
     }
 
-    // Ancla diaria fuera de la BD: el log del servidor guarda el último eslabón. Si alguien reescribiera la
-    // cadena completa desde la BD (recalculando los hashes), el último hash ya no coincidiría con el anclado.
+    // Cada día deja el último hash en el log del servidor.
+    // Si alguien reescribe toda la cadena desde la BD, ese hash ya no coincide.
     @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
     async anclar(): Promise<void>{
         try{

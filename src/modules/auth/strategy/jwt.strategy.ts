@@ -1,30 +1,36 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { InjectRepository } from "@nestjs/typeorm";
 import {PassportStrategy} from '@nestjs/passport'
-import { ExtractJwt, Strategy } from "passport-jwt";
+import { Strategy } from "passport-jwt";
+import { Repository } from "typeorm";
 import { UsuarioService } from "../../usuario/usuario.service";
-import { tokenDeCookie } from "../cookie-sesion";
+import { extraerToken } from "../cookie-sesion";
+import { SesionCerrada } from "../entities/sesionCerrada.entity";
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy){
 
-    constructor(configService: ConfigService, private readonly usuarioService: UsuarioService){
+    constructor(configService: ConfigService, private readonly usuarioService: UsuarioService,
+        @InjectRepository(SesionCerrada) private readonly sesionesCerradas: Repository<SesionCerrada>){
         super({
-            // Cookie HttpOnly del navegador; Bearer para Swagger y los tests
-            jwtFromRequest: ExtractJwt.fromExtractors([tokenDeCookie, ExtractJwt.fromAuthHeaderAsBearerToken()]),
+            jwtFromRequest: extraerToken,
             ignoreExpiration: false,
             secretOrKey: configService.getOrThrow<string>('JWT_SECRET')
         });
     }
 
-    // Se consulta la BD en cada petición: un usuario desactivado o con rol cambiado
-    // pierde el acceso de inmediato, sin esperar a que venza su token.
-    async validate(payload:{sub:string, correo:string, rol:string, iat:number}) {
-        const usuario = await this.usuarioService.usuarioPorId(payload.sub);
-        if(!usuario || !usuario.activo){
+    // Se consulta la BD en cada petición para que un usuario desactivado o una sesión cerrada pierdan el acceso de inmediato.
+    async validate(payload:{sub:string, correo:string, rol:string, iat:number, jti?:string}) {
+        const [usuario, cerrada] = await Promise.all([
+            this.usuarioService.usuarioPorId(payload.sub),
+            // Los tokens emitidos antes de que existiera jti no se pueden cerrar uno a uno, pero vencen a las 8 horas.
+            payload.jti ? this.sesionesCerradas.exists({where:{jti:payload.jti}}) : false,
+        ]);
+        if(!usuario || !usuario.activo || cerrada){
             throw new UnauthorizedException('Sesión no válida');
         }
-        // Tras cambiar la contraseña, los tokens anteriores dejan de servir. iat viene en segundos:
-        // un token emitido en el mismo segundo del cambio se acepta (es el que entrega el propio cambio).
+        // Después de cambiar la contraseña los tokens anteriores dejan de servir en todos los dispositivos.
+        // iat viene en segundos, así que se acepta el token emitido en el mismo segundo del cambio.
         if(usuario.contrasenaCambiadaEn && payload.iat < Math.floor(usuario.contrasenaCambiadaEn.getTime() / 1000)){
             throw new UnauthorizedException('Sesión no válida');
         }

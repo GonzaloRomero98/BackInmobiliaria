@@ -3,16 +3,14 @@ import { NextFunction, Request, Response } from "express";
 import { AuditoriaService } from "./auditoria.service";
 
 const METODOS_AUDITADOS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-// Lecturas de datos personales (Ley 21.719, ISO 27001 A.8.15): quién vio solicitudes y cuándo, incluidos los
-// paneles de inicio del admin y de la secretaria (muestran nombres de visitas, reservas y celulares).
-// No entran: la exportación (la registra el servicio con la cantidad) ni el resumen (solo un número).
+// Lecturas de datos personales que se auditan (Ley 21.719, ISO 27001 A.8.15).
+// No entran la exportación, que la registra el servicio, ni el resumen, que es solo un número.
 const LECTURA_DATOS_PERSONALES = /^\/api\/(solicitudes(\/(?!(exportar|resumen)$)[^/]+)?|metricas(\/seguimiento)?)$/;
-// Métrica anónima de uso 3D/RA: cada visita llenaría la auditoría; solo se registran sus rechazos (p. ej. 429)
+// La métrica 3D es anónima. Registrar cada visita llenaría la auditoría, así que solo se guardan sus rechazos.
 const RUTA_EVENTOS = '/api/metricas/eventos';
 
-// Registra toda operación que modifica datos, toda lectura de datos personales
-// y todo intento rechazado por autenticación/autorización.
-// Se evalúa al terminar la respuesta, así incluye los rechazos de guards (401/403) y de rate limit (429).
+// Registra las operaciones que modifican datos, las lecturas de datos personales y los intentos rechazados.
+// Se evalúa al terminar la respuesta para incluir los rechazos 401, 403 y 429.
 @Injectable()
 export class AuditoriaMiddleware implements NestMiddleware{
     constructor(private readonly auditoriaService: AuditoriaService){}
@@ -30,7 +28,7 @@ export class AuditoriaMiddleware implements NestMiddleware{
             }
 
             const usuario = req.user as {id?:string, correo?:string, rol?:string} | undefined;
-            // En login no hay usuario autenticado: se guarda el correo intentado (nunca la contraseña).
+            // En el login no hay usuario autenticado, así que se guarda el correo intentado y nunca la contraseña.
             const correoLogin = ruta.endsWith('/auth/login') && typeof req.body?.correo === 'string' ? req.body.correo : null;
 
             void this.auditoriaService.registrar({
@@ -43,7 +41,6 @@ export class AuditoriaMiddleware implements NestMiddleware{
                 correo: usuario?.correo ?? correoLogin,
                 rol: usuario?.rol ?? null,
                 ip: req.ip ?? null,
-                // Lo dejan los controladores cuando el recurso deja de existir (p. ej. el nombre de un proyecto eliminado)
                 detalle: res.locals?.auditoriaDetalle ?? null,
             });
         });

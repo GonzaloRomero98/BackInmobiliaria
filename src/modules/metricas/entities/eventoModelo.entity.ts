@@ -6,7 +6,7 @@ export enum TipoEventoModelo{
     AR_INICIADA = 'AR_INICIADA',
 }
 
-// Uso anónimo de la experiencia 3D/RA (sin datos personales): cuántas veces se escanea el QR o se abre la RA
+// Uso anónimo del 3D y la RA, sin datos personales.
 @Entity('evento_modelo')
 export class EventoModelo{
     @PrimaryGeneratedColumn('uuid', {primaryKeyConstraintName:'PK_evento_modelo'})

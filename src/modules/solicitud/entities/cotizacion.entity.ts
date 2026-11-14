@@ -2,7 +2,7 @@ import { Column, CreateDateColumn, Entity, Generated, Index, JoinColumn, ManyToO
 import { Solicitud } from "./solicitud.entity";
 import { Usuario } from "../../usuario/entities/usuario.entity";
 
-// Valores congelados al emitir: reimprimirla da la misma cotización aunque después cambie el precio o la UF
+// Valores guardados al emitir, para que una reimpresión salga igual aunque cambie el precio o la UF.
 export interface DatosCotizacion{
     nombreModelo:string;
     precio:number;
@@ -21,7 +21,6 @@ export class Cotizacion{
     @PrimaryGeneratedColumn('uuid', {primaryKeyConstraintName:'PK_cotizacion'})
     id:string;
 
-    // Correlativo de la inmobiliaria; se imprime como COT-000123
     @Index('UQ_cotizacion_folio', {unique:true})
     @Column()
     @Generated('increment')

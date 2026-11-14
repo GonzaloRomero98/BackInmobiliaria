@@ -73,7 +73,7 @@ describe('ProyectoService', () => {
   });
 
   describe('proyectos casi en el mismo punto (< 50 m)', () => {
-    // Plaza de Arica; 0.0001° de latitud ≈ 11 m, 0.003° ≈ 334 m
+    // Plaza de Arica. 0,0001° de latitud son unos 11 m y 0,003° unos 334 m.
     const OTRO = { id: 'otro', nombre: 'Los Robles', activo: true, latitud: -18.4783, longitud: -70.3126 };
     const base = { nombre: 'Nuevo', id_ciudad: 3, imagenPortada: 'x' };
     beforeEach(() => {

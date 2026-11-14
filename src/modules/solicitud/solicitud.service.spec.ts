@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { FindOperator, IsNull, Not, Repository } from 'typeorm';
+import { FindOperator, In, IsNull, Not, Repository } from 'typeorm';
 import { celdaCsv, SolicitudService } from './solicitud.service';
 import { Solicitud } from './entities/solicitud.entity';
 import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
@@ -10,14 +10,14 @@ import { NotaSolicitud } from './entities/notaSolicitud.entity';
 import { Cotizacion } from './entities/cotizacion.entity';
 
 describe('SolicitudService', () => {
-  let solicitudRepo: { exists: jest.Mock; findOne: jest.Mock; find: jest.Mock; findAndCount: jest.Mock; count: jest.Mock; save: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
+  let solicitudRepo: { exists: jest.Mock; findOne: jest.Mock; find: jest.Mock; findAndCount: jest.Mock; count: jest.Mock; save: jest.Mock; delete: jest.Mock };
   let modeloRepo: { findOne: jest.Mock };
   let reservaRepo: { exists: jest.Mock; find: jest.Mock };
   let auditoria: { registrar: jest.Mock };
-  let qb: Record<'delete' | 'where' | 'execute', jest.Mock>;
   let notaRepo: { find: jest.Mock; save: jest.Mock; create: jest.Mock };
   let cotizacionRepo: { find: jest.Mock; save: jest.Mock; create: jest.Mock };
-  let manager: { save: jest.Mock; create: jest.Mock };
+  let manager: { save: jest.Mock; create: jest.Mock; find: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
+  let qbReserva: Record<'delete' | 'from' | 'where' | 'execute', jest.Mock>;
   let service: SolicitudService;
   const dto = {
     nombre: 'Juan', apellido: 'Pérez', correo: 'j@p.cl', celular: '+56911111111',
@@ -37,16 +37,18 @@ describe('SolicitudService', () => {
   }
 
   beforeEach(() => {
-    qb = { delete: jest.fn(), where: jest.fn(), execute: jest.fn().mockResolvedValue({ affected: 2 }) };
-    qb.delete.mockReturnValue(qb);
-    qb.where.mockReturnValue(qb);
     solicitudRepo = {
       exists: jest.fn(), findOne: jest.fn(), find: jest.fn(), save: jest.fn(async (x) => x),
       findAndCount: jest.fn(async () => [[], 0]), count: jest.fn(async () => 0),
-      delete: jest.fn(), createQueryBuilder: jest.fn(() => qb),
+      delete: jest.fn(),
     };
-    // Transacción de actualizarVisita: save devuelve lo guardado, create arma la nota automática
-    manager = { save: jest.fn(async (x) => x), create: jest.fn((_entidad, x) => x) };
+    qbReserva = { delete: jest.fn(), from: jest.fn(), where: jest.fn(), execute: jest.fn().mockResolvedValue({ affected: 0 }) };
+    for (const paso of ['delete', 'from', 'where'] as const) qbReserva[paso].mockReturnValue(qbReserva);
+    manager = {
+      save: jest.fn(async (x) => x), create: jest.fn((_entidad, x) => x),
+      find: jest.fn(async () => [{ id: 's1' }, { id: 's2' }]), delete: jest.fn(async () => ({ affected: 2 })),
+      createQueryBuilder: jest.fn(() => qbReserva),
+    };
     Object.assign(solicitudRepo, { manager: { transaction: jest.fn((cb: (m: typeof manager) => unknown) => cb(manager)) } });
     notaRepo = { find: jest.fn(async () => []), save: jest.fn(async (x) => x), create: jest.fn((x) => x) };
     cotizacionRepo = { find: jest.fn(async () => []), save: jest.fn(async (x) => x), create: jest.fn((x) => x) };
@@ -125,19 +127,41 @@ describe('SolicitudService', () => {
     await expect(service.marcarContactado('s1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('eliminarSolicitud borra por id y da 404 si no existía', async () => {
-    solicitudRepo.delete.mockResolvedValueOnce({ affected: 1 });
-    await service.eliminarSolicitud('s1');
-    expect(solicitudRepo.delete).toHaveBeenCalledWith({ id: 's1' });
+  describe('borrado de solicitudes', () => {
+    it('eliminarSolicitud borra por id, primero sus reservas anuladas, y da 404 si no existía', async () => {
+      manager.find.mockResolvedValueOnce([{ id: 's1' }]);
+      manager.delete.mockResolvedValueOnce({ affected: 1 });
+      await service.eliminarSolicitud('s1');
+      expect(manager.find).toHaveBeenCalledWith(Solicitud, expect.objectContaining({ where: { id: 's1' } }));
+      expect(qbReserva.from).toHaveBeenCalledWith(Reserva);
+      expect(qbReserva.where).toHaveBeenCalledWith('id_solicitud IN (:...ids) AND estado = :anulada', { ids: ['s1'], anulada: 'ANULADA' });
+      expect(manager.delete).toHaveBeenCalledWith(Solicitud, { id: In(['s1']) });
+      expect(qbReserva.execute.mock.invocationCallOrder[0]).toBeLessThan(manager.delete.mock.invocationCallOrder[0]);
 
-    solicitudRepo.delete.mockResolvedValueOnce({ affected: 0 });
-    await expect(service.eliminarSolicitud('s2')).rejects.toBeInstanceOf(NotFoundException);
-  });
+      manager.find.mockResolvedValueOnce([]);
+      await expect(service.eliminarSolicitud('s2')).rejects.toBeInstanceOf(NotFoundException);
+    });
 
-  it('eliminarPorCorreo compara exacto sin mayúsculas (sin LIKE) y devuelve cuántas borró', async () => {
-    const res = await service.eliminarPorCorreo('J_P@p.cl');
-    expect(qb.where).toHaveBeenCalledWith('LOWER(correo) = LOWER(:correo)', { correo: 'J_P@p.cl' });
-    expect(res).toEqual({ eliminadas: 2 });
+    it('eliminarPorCorreo compara exacto sin mayúsculas (sin LIKE) y devuelve cuántas borró', async () => {
+      const res = await service.eliminarPorCorreo('J_P@p.cl');
+      const correo = manager.find.mock.calls[0][1].where.correo as FindOperator<unknown>;
+      expect(correo.type).toBe('raw');
+      expect(correo.getSql?.('"correo"')).toBe('LOWER("correo") = LOWER(:correo)');
+      expect(correo.objectLiteralParameters).toEqual({ correo: 'J_P@p.cl' });
+      expect(res).toEqual({ eliminadas: 2 });
+    });
+
+    it('sin solicitudes que borrar no toca las reservas', async () => {
+      manager.find.mockResolvedValueOnce([]);
+      expect(await service.eliminarPorCorreo('nadie@x.cl')).toEqual({ eliminadas: 0 });
+      expect(qbReserva.execute).not.toHaveBeenCalled();
+      expect(manager.delete).not.toHaveBeenCalled();
+    });
+
+    it('otros errores de la BD no se disfrazan de 409', async () => {
+      manager.delete.mockRejectedValueOnce(new Error('conexión perdida'));
+      await expect(service.eliminarSolicitud('s1')).rejects.toThrow('conexión perdida');
+    });
   });
 
   describe('exportarCsv', () => {
@@ -179,14 +203,15 @@ describe('SolicitudService', () => {
   });
 
   describe('retención', () => {
+    const condicion = () => manager.find.mock.calls[0][1].where;
     function fechaLimite(): Date {
-      const operador = solicitudRepo.delete.mock.calls[0][0].creadoEn as FindOperator<Date>;
+      const operador = condicion().creadoEn as FindOperator<Date>;
       expect(operador.type).toBe('lessThan');
       return operador.value as Date;
     }
 
     it('borra las solicitudes más antiguas que 365 días por defecto y lo audita', async () => {
-      solicitudRepo.delete.mockResolvedValue({ affected: 3 });
+      manager.delete.mockResolvedValue({ affected: 3 });
       const antes = Date.now();
 
       expect(await service.eliminarVencidas()).toBe(3);
@@ -200,45 +225,38 @@ describe('SolicitudService', () => {
 
     it('respeta SOLICITUD_RETENCION_DIAS', async () => {
       crear({ SOLICITUD_RETENCION_DIAS: '30' });
-      solicitudRepo.delete.mockResolvedValue({ affected: 0 });
       await service.eliminarVencidas();
       expect((Date.now() - fechaLimite().getTime()) / 86_400_000).toBeCloseTo(30, 2);
     });
 
     it('excluye las solicitudes con reserva activa o venta', async () => {
       reservaRepo.find.mockResolvedValue([{ solicitud: { id: 's9' } }, { solicitud: { id: 's8' } }]);
-      solicitudRepo.delete.mockResolvedValue({ affected: 1 });
       await service.eliminarVencidas();
-      const id = solicitudRepo.delete.mock.calls[0][0].id as FindOperator<unknown>;
+      const id = condicion().id as FindOperator<unknown>;
       expect(id.type).toBe('not');
       expect(JSON.stringify(id)).toContain('s9');
       expect(JSON.stringify(id)).toContain('s8');
     });
 
     it('sin reservas activas no filtra por id', async () => {
-      solicitudRepo.delete.mockResolvedValue({ affected: 0 });
       await service.eliminarVencidas();
-      expect(solicitudRepo.delete.mock.calls[0][0].id).toBeUndefined();
+      expect(condicion().id).toBeUndefined();
     });
   });
 
   describe('solicitudes con reserva activa', () => {
     const MENSAJE = 'La solicitud tiene una reserva activa o una venta; sus datos se conservan para ejecutar el contrato. Si la reserva se anula, se podrá eliminar.';
+    // Así responde Postgres cuando el FK sin cascada impide borrar una solicitud con reservas.
+    const errorFk = Object.assign(new Error('violates foreign key constraint'), { code: '23503', constraint: 'FK_reserva_solicitud' });
 
-    it('eliminarSolicitud responde 409 y no borra', async () => {
-      reservaRepo.exists.mockResolvedValue(true);
+    it('eliminarSolicitud responde 409 si la BD rechaza el borrado por una reserva', async () => {
+      manager.delete.mockRejectedValueOnce(errorFk);
       await expect(service.eliminarSolicitud('s1')).rejects.toThrow(new ConflictException(MENSAJE));
-      expect(solicitudRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('eliminarPorCorreo responde 409 sin borrar nada, comparando el correo sin mayúsculas', async () => {
-      reservaRepo.exists.mockResolvedValue(true);
+    it('eliminarPorCorreo responde 409 si cualquiera de sus solicitudes tiene una reserva', async () => {
+      manager.delete.mockRejectedValueOnce(errorFk);
       await expect(service.eliminarPorCorreo('J@P.cl')).rejects.toThrow(new ConflictException(MENSAJE));
-      expect(qb.execute).not.toHaveBeenCalled();
-      const correo = reservaRepo.exists.mock.calls[0][0].where.solicitud.correo as FindOperator<unknown>;
-      expect(correo.type).toBe('raw');
-      expect(correo.getSql?.('"correo"')).toBe('LOWER("correo") = LOWER(:correo)');
-      expect(correo.objectLiteralParameters).toEqual({ correo: 'J@P.cl' });
     });
 
     it('la bandeja, el CSV y el detalle traen las reservas', async () => {
@@ -259,7 +277,6 @@ describe('SolicitudService', () => {
       const res = await service.listarSolicitudes({ pagina: 3, limite: 20, filtro: 'todas' });
       expect(res).toEqual({ solicitudes: [{ id: 's21' }], total: 45, pendientes: 7, pagina: 3, limite: 20 });
       expect(solicitudRepo.findAndCount.mock.calls[0][0]).toMatchObject({ skip: 40, take: 20, order: { creadoEn: 'DESC', id: 'ASC' }, where: {} });
-      // El contador de pendientes no depende del filtro
       expect(solicitudRepo.count).toHaveBeenCalledWith({ where: { contactado: false } });
     });
 
@@ -409,6 +426,31 @@ describe('SolicitudService', () => {
       expect(cotizacionRepo.save.mock.calls[0][0].datos).toMatchObject({ uf: null, nota: '' });
       solicitudRepo.findOne.mockResolvedValueOnce(null);
       await expect(service.emitirCotizacion('s2', { pie: 0, tasa: 0, plazo: 1, validez: 1 }, 'u1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('corregir datos (rectificación)', () => {
+    const original = () => ({ id: 's1', nombre: 'Juan', apellido: 'Pérez', correo: 'j@p.cl', celular: '+56911111111' });
+
+    it('guarda solo los campos que cambiaron y deja una nota sin el valor anterior', async () => {
+      solicitudRepo.findOne.mockResolvedValue(original());
+      const s = await service.corregirDatos('s1', { correo: 'juan@p.cl', celular: '+56922222222', nombre: 'Juan' }, 'u1');
+      expect(s).toMatchObject({ nombre: 'Juan', correo: 'juan@p.cl', celular: '+56922222222' });
+      const nota = manager.create.mock.calls[0][1];
+      expect(nota).toEqual({ texto: 'Se corrigieron los datos de contacto: correo y celular.', solicitud: { id: 's1' }, usuario: { id: 'u1' } });
+      expect(nota.texto).not.toContain('j@p.cl');
+      expect(nota.texto).not.toContain('+56911111111');
+    });
+
+    it('sin cambios reales (o con null) no guarda ni deja nota', async () => {
+      solicitudRepo.findOne.mockResolvedValue(original());
+      await service.corregirDatos('s1', { nombre: 'Juan', apellido: null as unknown as string }, 'u1');
+      expect(manager.save).not.toHaveBeenCalled();
+    });
+
+    it('404 si la solicitud no existe', async () => {
+      solicitudRepo.findOne.mockResolvedValue(null);
+      await expect(service.corregirDatos('s9', { nombre: 'X' }, 'u1')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

@@ -37,7 +37,6 @@ export class CrearModeloCasaDto{
     @IsEnum(TipoVivienda)
     tipoVivienda?:TipoVivienda;
 
-    // Opcional aquí porque depende del tipo: el servicio la exige en casas
     @IsOptional()
     @IsNumber({maxDecimalPlaces:2})
     @IsPositive()
@@ -50,7 +49,6 @@ export class CrearModeloCasaDto{
     @IsEnum(Moneda)
     moneda:Moneda;
 
-    // Monto mensual en CLP
     @IsOptional()
     @IsInt()
     @Min(0)
@@ -82,14 +80,12 @@ export class CrearModeloCasaDto{
     @IsInt({each:true})
     caracteristicasID:number[];
 
-    // El estado comercial ya no se envía: se calcula desde las unidades y las reservas
     @IsOptional()
     @IsInt()
     @Min(1)
     @Max(9999)
     unidades?:number;
 
-    // false = borrador: no se ve en el catálogo
     @IsOptional()
     @IsBoolean()
     activo?:boolean;

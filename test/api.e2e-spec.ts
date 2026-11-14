@@ -16,13 +16,13 @@ import { Region } from '../src/modules/ubicacion/entities/region.entity';
 import { ModeloCasa } from '../src/modules/modeloCasa/entities/modeloCasa.entity';
 import { GaleriaModeloCasa } from '../src/modules/modeloCasa/entities/galeriaModeloCasa.entity';
 import { Solicitud } from '../src/modules/solicitud/entities/solicitud.entity';
-import { Reserva } from '../src/modules/reserva/entities/reserva.entity';
 import { Auditoria } from '../src/modules/auditoria/entities/auditoria.entity';
 import { NormativaProyecto } from '../src/modules/proyecto/entities/normativaProyecto.entity';
 import { EntornoService } from '../src/modules/proyecto/entorno.service';
 import { EventoModelo } from '../src/modules/metricas/entities/eventoModelo.entity';
+import { SesionCerrada } from '../src/modules/auth/entities/sesionCerrada.entity';
 
-// Variables propias del test: no dependemos del .env ni de la BD/S3 reales.
+// Variables propias del test, para no depender del .env ni de la BD real.
 Object.assign(process.env, {
   JWT_SECRET: 'test-secret',
   AWS_S3_BUCKET: 'bucket-test',
@@ -43,8 +43,9 @@ type MockRepo = Record<
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const repos = new Map<unknown, MockRepo>();
-const queryBuilder = { delete: jest.fn(), where: jest.fn(), execute: jest.fn() };
+const queryBuilder = { delete: jest.fn(), from: jest.fn(), where: jest.fn(), execute: jest.fn() };
 queryBuilder.delete.mockReturnValue(queryBuilder);
+queryBuilder.from.mockReturnValue(queryBuilder);
 queryBuilder.where.mockReturnValue(queryBuilder);
 
 function repo(entity: unknown): MockRepo {
@@ -63,7 +64,6 @@ function repo(entity: unknown): MockRepo {
       update: jest.fn(),
       createQueryBuilder: jest.fn(() => queryBuilder),
     });
-    // Transacciones de repository.manager: delegan en los repos simulados de cada entidad
     Object.assign(repos.get(entity)!, { manager: { transaction: (cb: (m: unknown) => unknown) => cb(gestorSimulado) } });
   }
   return repos.get(entity)!;
@@ -71,7 +71,12 @@ function repo(entity: unknown): MockRepo {
 
 const gestorSimulado = {
   findOne: (entidad: unknown, opciones: unknown) => repo(entidad).findOne(opciones),
-  save: (entidad: unknown, datos: unknown) => repo(entidad).save(datos),
+  find: (entidad: unknown, opciones: unknown) => repo(entidad).find(opciones),
+  delete: (entidad: unknown, criterio: unknown) => repo(entidad).delete(criterio),
+  create: (entidad: unknown, datos: unknown) => repo(entidad).create(datos),
+  createQueryBuilder: () => queryBuilder,
+  // save(entidad) con un solo argumento guarda la instancia que recibe.
+  save: jest.fn((entidad: unknown, datos?: unknown) => datos === undefined ? Promise.resolve(entidad) : repo(entidad).save(datos)),
 };
 
 const fakeDataSource = {
@@ -84,20 +89,17 @@ const fakeDataSource = {
   destroy: jest.fn(),
 };
 
-// Usuarios que existen en la "BD": JwtStrategy los consulta en cada petición autenticada
 const usuarios: Record<string, Partial<Usuario>> = {
   'admin-id': { id: 'admin-id', correo: 'admin@x.cl', activo: true, rol: { id: 1, nombre: 'ADMIN' } },
   'sec-id': { id: 'sec-id', correo: 'sec@x.cl', activo: true, rol: { id: 2, nombre: 'SECRETARIO' } },
   'inactivo-id': { id: 'inactivo-id', correo: 'baja@x.cl', activo: false, rol: { id: 1, nombre: 'ADMIN' } },
 };
 
-// Los tests no consultan OpenStreetMap real
 const entornoMock = { calcular: jest.fn() };
 const ENTORNO = { radio: 1000, lugares: [], resumen: { transporte: 2, educacion: 5, salud: 1, comercio: 3, areasVerdes: 4 } };
 
 const esperarAuditoria = () => new Promise((resolve) => setImmediate(resolve));
 
-// Rate limit: cada test usa un almacenamiento nuevo, así los contadores parten en cero
 let rateLimit = new ThrottlerStorageService();
 const rateLimitPorTest = {
   increment: (...args: Parameters<ThrottlerStorageService['increment']>) => rateLimit.increment(...args),
@@ -195,7 +197,7 @@ describe('API (e2e, BD simulada)', () => {
     });
   });
 
-  // Rutas agregadas el 13-11: si alguien quita un guard o un @Roles, esta tabla falla
+  // Si alguien quita un guard o un @Roles de estas rutas, esta tabla falla.
   describe('permisos de las rutas de seguimiento y borrado definitivo', () => {
     type Metodo = 'post' | 'patch' | 'delete';
     const RUTAS: [Metodo, string][] = [
@@ -205,11 +207,11 @@ describe('API (e2e, BD simulada)', () => {
       ['post', `/api/solicitudes/${UUID}/notas`],
       ['patch', `/api/solicitudes/${UUID}/visita`],
       ['post', `/api/solicitudes/${UUID}/cotizaciones`],
+      ['patch', `/api/solicitudes/${UUID}`],
     ];
 
     it.each(RUTAS)('%s %s sin sesión -> 401', (metodo, ruta) => http()[metodo](ruta).send({}).expect(401));
 
-    // Borrar para siempre es solo del ADMIN
     it.each(RUTAS.slice(0, 2))('%s %s con SECRETARIO -> 403', (metodo, ruta) =>
       http()[metodo](ruta).set(auth(secretarioToken)).expect(403));
   });
@@ -256,16 +258,16 @@ describe('API (e2e, BD simulada)', () => {
     });
 
     it('login: el 6º intento en un minuto desde la misma IP -> 429', async () => {
-      // Un correo distinto en cada intento: así salta el límite por IP y no el bloqueo por cuenta
       for (let i = 0; i < 5; i++) {
         await http().post('/api/auth/login').send({ correo: `ip${i}@a.cl`, contrasena: 'x' }).expect(401);
       }
       await http().post('/api/auth/login').send({ correo: 'ip5@a.cl', contrasena: 'x' }).expect(429);
     });
 
-    it('login: 5 fallos sobre la misma cuenta la bloquean aunque cambie la IP -> 429', async () => {
+    // El bloqueo es por correo e IP; aquí la IP es la misma y solo se reinicia el límite por minuto.
+    it('login: 5 fallos sobre la misma cuenta desde la misma IP la bloquean aunque pase el límite por minuto -> 429', async () => {
       for (let i = 0; i < 5; i++) {
-        rateLimit = new ThrottlerStorageService(); // simula una IP nueva en cada intento
+        rateLimit = new ThrottlerStorageService();
         await http().post('/api/auth/login').send({ correo: 'bloqueo@a.cl', contrasena: 'x' }).expect(401);
       }
       rateLimit = new ThrottlerStorageService();
@@ -283,7 +285,6 @@ describe('API (e2e, BD simulada)', () => {
 
       expect(res.body.usuario).toEqual({ id: 'admin-id', correo: 'admin@x.cl', rol: 'ADMIN' });
       expect(res.body.usuario.contrasena).toBeUndefined();
-      // El token solo viaja en la cookie HttpOnly, nunca en el cuerpo
       expect(res.body).not.toHaveProperty('access_token');
       const cookie = res.headers['set-cookie'] as unknown as string[];
       expect(cookie[0]).toMatch(/^auth_token=[\w-]+\.[\w-]+\.[\w-]+;/);
@@ -302,11 +303,28 @@ describe('API (e2e, BD simulada)', () => {
     it('logout borra la cookie de sesión, incluso sin sesión válida', async () => {
       const res = await http().post('/api/auth/logout').expect(204);
       expect((res.headers['set-cookie'] as unknown as string[])[0]).toMatch(/^auth_token=;.*Expires=Thu, 01 Jan 1970/);
+      expect(repo(SesionCerrada).save).not.toHaveBeenCalled();
+    });
+
+    it('logout cierra solo ese token: deja de servir y otro token del mismo usuario sigue entrando', async () => {
+      const jwt = app.get(JwtService);
+      const PC = '22222222-2222-4222-8222-222222222222';
+      const CELULAR = '33333333-3333-4333-8333-333333333333';
+      const tokenPc = jwt.sign({ sub: 'admin-id', correo: 'admin@x.cl', rol: 'ADMIN', jti: PC });
+      const tokenCelular = jwt.sign({ sub: 'admin-id', correo: 'admin@x.cl', rol: 'ADMIN', jti: CELULAR });
+
+      await http().post('/api/auth/logout').set('Cookie', `auth_token=${tokenPc}`).expect(204);
+      expect(repo(SesionCerrada).save).toHaveBeenCalledWith({ jti: PC, venceEn: expect.any(Date) });
+
+      repo(SesionCerrada).exists.mockImplementation(async ({ where }) => where.jti === PC);
+      await http().get('/api/solicitudes/resumen').set('Cookie', `auth_token=${tokenPc}`).expect(401);
+      await http().get('/api/solicitudes/resumen').set('Cookie', `auth_token=${tokenCelular}`).expect(200);
+      repo(SesionCerrada).exists.mockReset();
     });
 
     const nuevoUsuario = { correo: 'n@x.cl', contrasena: 'Inmocap2026', nombre: 'N', rol: 'ADMIN' };
 
-    // Eliminada: devolvía al ADMIN un token del usuario creado (podía actuar en su nombre). Se usa POST /usuarios.
+    // Se eliminó porque devolvía al ADMIN un token del usuario creado.
     it('POST /auth/registrar ya no existe -> 404', () =>
       http().post('/api/auth/registrar').set(auth(adminToken)).send(nuevoUsuario).expect(404));
 
@@ -438,7 +456,7 @@ describe('API (e2e, BD simulada)', () => {
       const sala = { salaDireccion: '1 Sur 100, Talca', salaHorario: 'Lun a sáb 10:00 a 18:00', salaTelefono: '+56712345678', salaLatitud: -35.42, salaLongitud: -71.66 };
       const res = await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send(sala).expect(200);
       expect(res.body).toMatchObject(sala);
-      expect(entornoMock.calcular).not.toHaveBeenCalled(); // la sala no cambia el entorno del proyecto
+      expect(entornoMock.calcular).not.toHaveBeenCalled();
 
       await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ salaLatitud: -95 }).expect(400);
       await http().patch(`/api/proyectos/${UUID}`).set(auth(adminToken)).send({ salaTelefono: '1'.repeat(21) }).expect(400);
@@ -760,7 +778,6 @@ describe('API (e2e, BD simulada)', () => {
       const res = await http().patch(`/api/usuarios/${uid}`).set(auth(adminToken)).send({ activo: false }).expect(200);
       expect(res.body).toEqual({ id: uid, activo: false });
 
-      // El propio admin (sub con formato UUID para pasar ParseUUIDPipe)
       repo(Usuario).findOne.mockResolvedValue({ id: uid, correo: 'yo@x.cl', activo: true, rol: { nombre: 'ADMIN' } });
       const yo = app.get(JwtService).sign({ sub: uid, correo: 'yo@x.cl', rol: 'ADMIN' });
       const propio = await http().patch(`/api/usuarios/${uid}`).set(auth(yo)).send({ activo: false }).expect(400);
@@ -812,7 +829,6 @@ describe('API (e2e, BD simulada)', () => {
       const cambiadaEn: Date = repo(Usuario).save.mock.calls.at(-1)![0].contrasenaCambiadaEn;
       expect(cambiadaEn).toBeInstanceOf(Date);
 
-      // Desde ahora la BD devuelve la fecha del cambio
       repo(Usuario).findOne.mockImplementation(async ({ where }) => ({ ...usuarios[where?.id], contrasenaCambiadaEn: cambiadaEn }));
       const anterior = app.get(JwtService).sign({ sub: 'sec-id', correo: 'sec@x.cl', rol: 'SECRETARIO', iat: Math.floor(cambiadaEn.getTime() / 1000) - 60 });
       await http().get('/api/solicitudes').set(auth(anterior)).expect(401);
@@ -824,7 +840,6 @@ describe('API (e2e, BD simulada)', () => {
     it('GET con ADMIN -> 200; SECRETARIO -> 403', async () => {
       const qb = { innerJoin: jest.fn(), select: jest.fn(), addSelect: jest.fn(), where: jest.fn(), groupBy: jest.fn(), addGroupBy: jest.fn(), orderBy: jest.fn(), limit: jest.fn(), getRawMany: jest.fn().mockResolvedValue([]) };
       for (const m of ['innerJoin', 'select', 'addSelect', 'where', 'groupBy', 'addGroupBy', 'orderBy', 'limit'] as const) qb[m].mockReturnValue(qb);
-      // Dos consultas agrupadas sobre solicitudes: por semana y más consultados
       repo(Solicitud).createQueryBuilder.mockReturnValueOnce(qb).mockReturnValueOnce(qb);
       const qbCasas = { select: jest.fn(), addSelect: jest.fn(), where: jest.fn(), getRawOne: jest.fn().mockResolvedValue({ unidades: '4', reservados: '1', vendidos: null }) };
       for (const m of ['select', 'addSelect', 'where'] as const) qbCasas[m].mockReturnValue(qbCasas);
@@ -835,7 +850,6 @@ describe('API (e2e, BD simulada)', () => {
         reservas: { reservasMes: 0, ventasMes: 0 }, visitas: { proximos7Dias: 0, proximas: [] },
       });
       expect(res.body.solicitudes.porSemana).toHaveLength(8);
-      // Muestra nombres de visitas: queda auditado como lectura de datos personales
       await esperarAuditoria();
       expect(repo(Auditoria).create).toHaveBeenCalledWith(expect.objectContaining({ accion: 'GET /api/metricas', idUsuario: 'admin-id' }));
       await http().get('/api/metricas').set(auth(secretarioToken)).expect(403);
@@ -1023,13 +1037,15 @@ describe('API (e2e, BD simulada)', () => {
 
     describe('derecho de supresión', () => {
       it('DELETE /:id con ADMIN -> 200; inexistente -> 404', async () => {
+        repo(Solicitud).find.mockResolvedValue([{ id: UUID }]);
         await http().delete(`/api/solicitudes/${UUID}`).set(auth(adminToken)).expect(200);
-        repo(Solicitud).delete.mockResolvedValue({ affected: 0 });
+        repo(Solicitud).find.mockResolvedValue([]);
         await http().delete(`/api/solicitudes/${UUID}`).set(auth(adminToken)).expect(404);
       });
 
       it('DELETE ?correo= borra todas las solicitudes de esa persona', async () => {
-        queryBuilder.execute.mockResolvedValue({ affected: 3 });
+        repo(Solicitud).find.mockResolvedValue([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+        repo(Solicitud).delete.mockResolvedValue({ affected: 3 });
         const res = await http().delete('/api/solicitudes?correo=j@p.cl').set(auth(adminToken)).expect(200);
         expect(res.body).toEqual({ eliminadas: 3 });
       });
@@ -1037,16 +1053,36 @@ describe('API (e2e, BD simulada)', () => {
       it('DELETE sin correo válido -> 400', () =>
         http().delete('/api/solicitudes?correo=x').set(auth(adminToken)).expect(400));
 
-      it('con reserva activa o venta -> 409 con el motivo, por id y por correo', async () => {
-        repo(Reserva).exists.mockResolvedValue(true);
+      it('con reserva activa o venta (la BD rechaza el borrado) -> 409 con el motivo, por id y por correo', async () => {
+        repo(Solicitud).find.mockResolvedValue([{ id: UUID }]);
+        repo(Solicitud).delete.mockRejectedValue(Object.assign(new Error('fk'), { constraint: 'FK_reserva_solicitud' }));
         const res = await http().delete(`/api/solicitudes/${UUID}`).set(auth(adminToken)).expect(409);
         expect(res.body.message).toContain('se conservan para ejecutar el contrato');
         await http().delete('/api/solicitudes?correo=j@p.cl').set(auth(adminToken)).expect(409);
-        repo(Reserva).exists.mockResolvedValue(false);
       });
 
       it('SECRETARIO no puede borrar -> 403', () =>
         http().delete(`/api/solicitudes/${UUID}`).set(auth(secretarioToken)).expect(403));
+    });
+
+    describe('derecho de rectificación', () => {
+      const original = { id: UUID, nombre: 'Juan', apellido: 'Pérez', correo: 'j@p.cl', celular: '+56911111111' };
+
+      it('PATCH /:id con SECRETARIO corrige, normaliza el celular y deja una nota', async () => {
+        repo(Solicitud).findOne.mockResolvedValue({ ...original });
+        const res = await http().patch(`/api/solicitudes/${UUID}`).set(auth(secretarioToken))
+          .send({ celular: '9 2222 2222', mensaje: 'no se puede cambiar' }).expect(200);
+        expect(res.body).toMatchObject({ celular: '+56922222222', correo: 'j@p.cl' });
+        expect(res.body.mensaje).toBeUndefined();
+        expect(gestorSimulado.save).toHaveBeenCalledWith(expect.objectContaining({ texto: 'Se corrigieron los datos de contacto: celular.' }));
+      });
+
+      it.each([[{ correo: 'no-es-correo' }], [{ celular: '123' }], [{ nombre: '' }], [{ apellido: 'x'.repeat(201) }]])(
+        'PATCH con %p -> 400', (cuerpo) =>
+          http().patch(`/api/solicitudes/${UUID}`).set(auth(adminToken)).send(cuerpo).expect(400));
+
+      it('PATCH de una solicitud inexistente -> 404', () =>
+        http().patch(`/api/solicitudes/${UUID}`).set(auth(adminToken)).send({ nombre: 'X' }).expect(404));
     });
   });
 

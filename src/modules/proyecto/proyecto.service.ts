@@ -11,7 +11,7 @@ import { NormativaProyecto } from "./entities/normativaProyecto.entity";
 import { NormativaDto } from "./dto/normativa.dto";
 import { distanciaMetros, Entorno, EntornoService } from "./entorno.service";
 
-// Otro proyecto a menos de esto casi siempre es un duplicado o un clic equivocado en el mapa
+// A menos de 50 m casi siempre es un duplicado o un clic equivocado en el mapa.
 export const DISTANCIA_DUPLICADO_M = 50;
 
 @Injectable()
@@ -65,7 +65,7 @@ export class ProyectoService{
         }
         Object.assign(proyecto, cambios);
         if(cambiaUbicacion){
-            // El entorno guardado ya no corresponde a la nueva ubicación
+            // El entorno guardado ya no corresponde a la nueva ubicación.
             Object.assign(proyecto, {entorno:null, entornoActualizadoEn:null});
         }
         const guardado = await this.proyectoRepository.save(proyecto);
@@ -86,7 +86,6 @@ export class ProyectoService{
         return {entorno:proyecto.entorno, actualizadoEn:proyecto.entornoActualizadoEn};
     }
 
-    // Consulta OpenStreetMap y guarda el resultado (lo usa el admin para reintentar o refrescar)
     async actualizarEntorno(id:string): Promise<{entorno:Entorno, actualizadoEn:Date}>{
         const proyecto = await this.obtenerProyectoPorID(id);
         if(proyecto.latitud === null || proyecto.longitud === null){
@@ -98,10 +97,9 @@ export class ProyectoService{
         return {entorno, actualizadoEn};
     }
 
-    // Se avisa, no se bloquea: dos proyectos casi en el mismo punto pueden ser legítimos (p. ej. etapas en el mismo
-    // terreno). Sin `confirmarCercania` responde 409 con los proyectos cercanos, para que el admin decida.
-    // Cuenta también los despublicados: suele ser el mismo proyecto creado de nuevo.
-    // shortcut: compara en memoria contra todos los proyectos con ubicación; con miles, filtrar por un recuadro en la consulta
+    // Se avisa sin bloquear, porque dos proyectos cercanos pueden ser etapas del mismo terreno.
+    // Sin confirmarCercania responde 409 con los proyectos cercanos para que el admin decida.
+    // Mejora pendiente: compara en memoria con todos los proyectos; con miles convendría filtrar por zona en la consulta.
     private async exigirConfirmacionSiDuplicado(latitud:number | null | undefined, longitud:number | null | undefined, confirmado?:boolean, excluirId?:string){
         if(latitud == null || longitud == null || confirmado) return;
         const otros = await this.proyectoRepository.find({
@@ -139,7 +137,7 @@ export class ProyectoService{
         });
     }
 
-    // Borrado lógico: el proyecto y sus modelos dejan de verse en el catálogo (las consultas filtran proyecto.activo)
+    // Borrado lógico: el proyecto y sus modelos dejan de verse en el catálogo.
     async despublicarProyecto(id:string): Promise<void>{
         const resultado = await this.proyectoRepository.update({id, activo:true}, {activo:false});
         if(!resultado.affected){
@@ -147,8 +145,7 @@ export class ProyectoService{
         }
     }
 
-    // Borrado definitivo del proyecto con sus modelos, solo si ninguno tiene solicitudes de clientes (mismo criterio que
-    // ModeloCasaService.eliminarModeloCasa: solicitudes y reservas no se pierden). La normativa se borra en cascada.
+    // Borrado definitivo con sus modelos, solo si ninguno tiene solicitudes de clientes.
     async eliminarProyecto(id:string): Promise<{nombre:string}>{
         return this.proyectoRepository.manager.transaction(async (manager) => {
             const proyecto = await manager.findOne(Proyecto, {where:{id}, select:{id:true, nombre:true}, loadEagerRelations:false});
@@ -172,7 +169,6 @@ export class ProyectoService{
         });
     }
 
-    // Deshace el despublicar: el proyecto y sus modelos activos vuelven al catálogo
     async publicarProyecto(id:string): Promise<void>{
         const resultado = await this.proyectoRepository.update({id, activo:false}, {activo:true});
         if(!resultado.affected){
@@ -180,7 +176,6 @@ export class ProyectoService{
         }
     }
 
-    // Panel del admin: incluye los despublicados (primero los publicados) para poder volver a publicarlos
     listarProyectosAdmin():Promise<Proyecto[]>{
         return this.proyectoRepository.find({order:{activo:'DESC', nombre:'ASC'}});
     }
@@ -201,7 +196,6 @@ export class ProyectoService{
         return normativa;
     }
 
-    // Crea o reemplaza la ficha de normativa del proyecto
     async guardarNormativa(id:string, normativaDto: NormativaDto): Promise<NormativaProyecto>{
         const proyecto = await this.obtenerProyectoPorID(id);
         const existente = await this.normativaRepository.findOne({where:{proyecto:{id}}});

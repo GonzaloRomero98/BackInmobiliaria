@@ -2,10 +2,14 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtStrategy } from './jwt.strategy';
 import { UsuarioService } from '../../usuario/usuario.service';
+import { Repository } from 'typeorm';
+import { SesionCerrada } from '../entities/sesionCerrada.entity';
 
 describe('JwtStrategy', () => {
   const usuarioService = { usuarioPorId: jest.fn() };
-  const strategy = new JwtStrategy(new ConfigService({ JWT_SECRET: 'test' }), usuarioService as unknown as UsuarioService);
+  const sesionesCerradas = { exists: jest.fn().mockResolvedValue(false) };
+  const strategy = new JwtStrategy(new ConfigService({ JWT_SECRET: 'test' }), usuarioService as unknown as UsuarioService,
+    sesionesCerradas as unknown as Repository<SesionCerrada>);
   const CAMBIO_SEG = 2_000_000_000;
   const payload = (iat: number) => ({ sub: 'u1', correo: 'a@a.cl', rol: 'ADMIN', iat });
   const usuario = (contrasenaCambiadaEn: Date | null) =>
@@ -29,5 +33,20 @@ describe('JwtStrategy', () => {
   it('rechaza usuarios desactivados', async () => {
     usuarioService.usuarioPorId.mockResolvedValue({ ...usuario(null), activo: false });
     await expect(strategy.validate(payload(CAMBIO_SEG))).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rechaza un token cerrado con logout y acepta otro token del mismo usuario', async () => {
+    usuarioService.usuarioPorId.mockResolvedValue(usuario(null));
+    sesionesCerradas.exists.mockImplementation(async ({ where }) => where.jti === 'cerrado');
+    await expect(strategy.validate({ ...payload(CAMBIO_SEG), jti: 'cerrado' })).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(strategy.validate({ ...payload(CAMBIO_SEG), jti: 'otro-equipo' })).resolves.toMatchObject({ id: 'u1' });
+    sesionesCerradas.exists.mockResolvedValue(false);
+  });
+
+  it('un token sin jti (emitido antes del cambio) no consulta la lista de sesiones cerradas', async () => {
+    sesionesCerradas.exists.mockClear();
+    usuarioService.usuarioPorId.mockResolvedValue(usuario(null));
+    await expect(strategy.validate(payload(CAMBIO_SEG))).resolves.toMatchObject({ id: 'u1' });
+    expect(sesionesCerradas.exists).not.toHaveBeenCalled();
   });
 });

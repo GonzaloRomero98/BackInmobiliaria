@@ -131,7 +131,6 @@ describe('ReservaService', () => {
       conModelo(3, 0, 1);
       let lecturas = 0;
       manager.findOne.mockImplementation(async (entidad: unknown) => {
-        // 1ª lectura (sin bloqueo): RESERVADA; tras esperar el bloqueo otra transacción ya la marcó VENDIDA
         if (entidad === Reserva) return { id: 'r1', estado: lecturas++ === 0 ? EstadoReserva.RESERVADA : EstadoReserva.VENDIDA, solicitud: { modeloCasa: { id: 'm1' } } };
         if (entidad === ModeloCasa) return modelo;
         return null;

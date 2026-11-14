@@ -3,13 +3,14 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { Solicitud } from "./entities/solicitud.entity";
-import { In, IsNull, LessThan, Not, Raw, Repository } from "typeorm";
+import { FindOptionsWhere, In, IsNull, LessThan, Not, Raw, Repository } from "typeorm";
 import { ModeloCasa } from "../modeloCasa/entities/modeloCasa.entity";
 import { CrearSolicitudDto } from "./dto/crearSolicitud.dto";
 import { ListarSolicitudesDto } from "./dto/listarSolicitudes.dto";
 import { AuditoriaService } from "../auditoria/auditoria.service";
 import { Reserva } from "../reserva/entities/reserva.entity";
-import { ESTADOS_ACTIVOS } from "../reserva/reserva.enum";
+import { ESTADOS_ACTIVOS, EstadoReserva } from "../reserva/reserva.enum";
+import { CorregirDatosSolicitudDto } from "./dto/corregirDatosSolicitud.dto";
 import { escaparLike } from "../auditoria/auditoria.service";
 import { NotaSolicitud } from "./entities/notaSolicitud.entity";
 import { Cotizacion, DatosCotizacion } from "./entities/cotizacion.entity";
@@ -18,18 +19,18 @@ import { ActualizarVisitaDto } from "./dto/actualizarVisita.dto";
 import { CrearCotizacionDto } from "./dto/crearCotizacion.dto";
 import { ETIQUETA_ORIGEN, ETIQUETA_VISITA, EstadoVisita, OrigenSolicitud } from "./solicitud.enum";
 
-// "13-11-2026, 10:30" (24 h, hora de Chile), para las notas automáticas de la visita
 const fechaHoraChile = (fecha: Date) => fecha.toLocaleString('es-CL', {
     timeZone:'America/Santiago', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hourCycle:'h23',
 });
 
 const RETENCION_DIAS_POR_DEFECTO = 365;
-// Ley 19.628: los datos necesarios para ejecutar un contrato se conservan; el admin usa este texto para responder al titular
+// Ley 19.628: los datos necesarios para cumplir un contrato se conservan.
 const MSJ_RESERVA_ACTIVA = 'La solicitud tiene una reserva activa o una venta; sus datos se conservan para ejecutar el contrato. Si la reserva se anula, se podrá eliminar.';
 const VISITA_DIAS_MAXIMOS = 60;
+const CAMPOS_CONTACTO = ['nombre', 'apellido', 'correo', 'celular'] as const;
+const LISTA = new Intl.ListFormat('es', {type:'conjunction'});
 
-// Los datos vienen de un formulario público: un texto que empieza con =, @, +, - etc. Excel lo ejecutaría
-// como fórmula, así que se antepone ' (los celulares tipo "+56 9..." se dejan tal cual).
+// Excel ejecuta como fórmula un texto que empieza con =, @, + o -, así que se le antepone una comilla.
 export function celdaCsv(valor:string):string{
     const seguro = /^[=@\t\r]|^[+-](?![\d\s]+$)/.test(valor) ? `'${valor}` : valor;
     return /[";\r\n]/.test(seguro) ? `"${seguro.replace(/"/g, '""')}"` : seguro;
@@ -56,7 +57,7 @@ export class SolicitudService{
         return this.guardarNueva(crearSolicitudDto, OrigenSolicitud.WEB);
     }
 
-    // Desde el panel la secretaria ya está hablando con el cliente: queda contactada y la visita, si se agenda, confirmada
+    // Desde el panel la secretaria ya habla con el cliente, por eso queda contactado y la visita confirmada.
     crearDesdePanel(dto:CrearSolicitudPanelDto):Promise<Solicitud>{
         return this.guardarNueva(dto, dto.origen);
     }
@@ -86,7 +87,7 @@ export class SolicitudService{
         return this.solicitudRepository.save(solicitud);
     }
 
-    // Solo si el proyecto tiene sala de ventas, y entre ahora y los próximos VISITA_DIAS_MAXIMOS días
+    // Solo si el proyecto tiene sala de ventas, y entre ahora y VISITA_DIAS_MAXIMOS días.
     private validarVisita(visita:string | undefined, modeloCasa:ModeloCasa):Date | null{
         if(!visita) return null;
         if(!modeloCasa.proyecto?.salaDireccion){
@@ -104,15 +105,11 @@ export class SolicitudService{
         return {pendientes: await this.solicitudRepository.count({where:{contactado:false}})};
     }
 
-    // Todas, para el CSV
     mostrarSolicitudes(): Promise<Solicitud[]>{
         return this.solicitudRepository.find({relations:{modeloCasa:true, reservas:true},order:{creadoEn:'DESC'}})
     }
 
-    // Bandeja paginada: el filtro va en la consulta para que cada página traiga solo lo que se ve.
-    // `pendientes` es el total sin contactar (contador de la pestaña), sin importar el filtro.
     async listarSolicitudes({pagina, limite, filtro, buscar}:ListarSolicitudesDto){
-        // Cada palabra debe aparecer en el nombre completo, el correo o el celular ("ana perez", "+5691234")
         const terminos = buscar ? buscar.split(/\s+/).filter(Boolean).slice(0, 5) : [];
         const coincide = terminos.length === 0 ? {} : {
             id: Raw((columna) => `${columna} IN (SELECT s.id FROM solicitud s WHERE ${
@@ -131,7 +128,7 @@ export class SolicitudService{
         const [[solicitudes, total], pendientes] = await Promise.all([
             this.solicitudRepository.findAndCount({
                 where, relations:{modeloCasa:true, reservas:true},
-                // id desempata las del mismo instante: sin él una fila podría repetirse o saltarse entre páginas
+                // id desempata las solicitudes del mismo instante; sin él una fila podría repetirse entre páginas.
                 order:{creadoEn:'DESC', id:'ASC'},
                 skip:(pagina - 1) * limite, take:limite,
             }),
@@ -140,9 +137,8 @@ export class SolicitudService{
         return {solicitudes, total, pendientes, pagina, limite};
     }
 
-    // Ficha del cliente: la solicitud con sus notas y cotizaciones (de quien las hizo solo el id y el nombre)
     async obtenerSolicitud(id:string){
-        // Las relaciones eager no se encadenan desde una relación pedida explícitamente: sin esto el proyecto llega sin ciudad
+        // Las relaciones eager no se cargan dentro de una relación pedida a mano, por eso se pide la ciudad.
         const solicitud = await this.solicitudRepository.findOne({where:{id}, relations:{modeloCasa:{proyecto:{ciudad:{region:true}}}, reservas:true}});
         if(!solicitud){
             throw new NotFoundException('Solicitud no encontrada');
@@ -168,7 +164,6 @@ export class SolicitudService{
         return this.notaRepository.save(this.notaRepository.create({texto, solicitud:{id}, usuario:{id:idUsuario}}));
     }
 
-    // Agendar/reagendar (con nota automática, para no perder la fecha anterior) o cambiar el estado de la visita
     async actualizarVisita(id:string, {fecha, estado}:ActualizarVisitaDto, idUsuario:string):Promise<Solicitud>{
         if(!fecha && !estado){
             throw new BadRequestException('Indica una fecha o un estado para la visita');
@@ -185,7 +180,6 @@ export class SolicitudService{
                 ? `Visita reagendada: del ${fechaHoraChile(anterior)} al ${fechaHoraChile(nueva)}.`
                 : `Visita agendada para el ${fechaHoraChile(nueva)}.`;
             solicitud.visitaPreferida = nueva;
-            // Una fecha nueva se acuerda con el cliente: queda confirmada salvo que se indique otro estado
             solicitud.visitaEstado = estado ?? EstadoVisita.CONFIRMADA;
         }else{
             if(!solicitud.visitaPreferida){
@@ -197,7 +191,6 @@ export class SolicitudService{
         if(asistencia && solicitud.visitaPreferida!.getTime() > Date.now()){
             throw new BadRequestException('La asistencia se marca después de la hora de la visita');
         }
-        // Confirmar o registrar la asistencia implica haber hablado con el cliente
         if(solicitud.visitaEstado !== EstadoVisita.POR_CONFIRMAR){
             solicitud.contactado = true;
         }
@@ -210,7 +203,7 @@ export class SolicitudService{
         });
     }
 
-    // Congela el precio y el modelo leídos aquí y las condiciones elegidas; el folio lo asigna la BD
+    // Guarda el precio y el modelo leídos aquí junto con las condiciones elegidas. El folio lo asigna la BD.
     async emitirCotizacion(id:string, dto:CrearCotizacionDto, idUsuario:string):Promise<Cotizacion>{
         const solicitud = await this.solicitudRepository.findOne({where:{id}, relations:{modeloCasa:true}});
         if(!solicitud){
@@ -225,8 +218,7 @@ export class SolicitudService{
         return this.cotizacionRepository.save(this.cotizacionRepository.create({datos, solicitud:{id}, usuario:{id:idUsuario}}));
     }
 
-    // CSV con ";" y BOM para que Excel en español lo abra con columnas y tildes correctas.
-    // Exportar datos personales queda auditado con el usuario que lo pidió.
+    // CSV con ";" y BOM para que Excel en español lo abra con columnas y tildes correctas. La exportación queda auditada.
     async exportarCsv(usuario:{id:string, correo:string, rol:string}):Promise<string>{
         const solicitudes = await this.mostrarSolicitudes();
         const filas = [
@@ -259,45 +251,70 @@ export class SolicitudService{
         return this.solicitudRepository.save(solicitud);
     }
 
-    async eliminarSolicitud(id:string):Promise<void>{
-        if(await this.reservaRepository.exists({where:{solicitud:{id}, estado:In(ESTADOS_ACTIVOS)}})){
-            throw new ConflictException(MSJ_RESERVA_ACTIVA);
+    // Derecho de rectificación (Ley 21.719). La nota dice qué campos cambiaron, pero no el valor anterior,
+    // para que el dato erróneo no quede copiado en el seguimiento.
+    async corregirDatos(id:string, dto:CorregirDatosSolicitudDto, idUsuario:string):Promise<Solicitud>{
+        const solicitud = await this.solicitudRepository.findOne({where:{id}});
+        if(!solicitud){
+            throw new NotFoundException('Solicitud no encontrada');
         }
-        const resultado = await this.solicitudRepository.delete({id});
-        if(!resultado.affected){
+        const corregidos = CAMPOS_CONTACTO.filter((campo) => dto[campo] != null && dto[campo] !== solicitud[campo]);
+        if(corregidos.length === 0) return solicitud;
+        for(const campo of corregidos) solicitud[campo] = dto[campo]!;
+
+        return this.solicitudRepository.manager.transaction(async (manager) => {
+            const guardada = await manager.save(solicitud);
+            await manager.save(manager.create(NotaSolicitud, {
+                texto:`Se corrigieron los datos de contacto: ${LISTA.format(corregidos)}.`, solicitud:{id}, usuario:{id:idUsuario},
+            }));
+            return guardada;
+        });
+    }
+
+    async eliminarSolicitud(id:string):Promise<void>{
+        if(await this.borrarSolicitudes({id}) === 0){
             throw new NotFoundException('Solicitud no encontrada');
         }
     }
 
-    // Comparación exacta sin distinguir mayúsculas (sin LIKE, para que "_" o "%" no actúen como comodines)
+    // Si una de sus solicitudes tiene una reserva activa, no se borra ninguna.
     async eliminarPorCorreo(correo:string):Promise<{eliminadas:number}>{
-        // Todo o nada: si una de sus solicitudes tiene reserva activa, no se borra ninguna
-        const conReserva = await this.reservaRepository.exists({where:{
-            estado:In(ESTADOS_ACTIVOS),
-            solicitud:{correo:Raw((columna) => `LOWER(${columna}) = LOWER(:correo)`, {correo})},
-        }});
-        if(conReserva){
-            throw new ConflictException(MSJ_RESERVA_ACTIVA);
-        }
-        const resultado = await this.solicitudRepository.createQueryBuilder()
-            .delete()
-            .where('LOWER(correo) = LOWER(:correo)', {correo})
-            .execute();
-        return {eliminadas: resultado.affected ?? 0};
+        return {eliminadas: await this.borrarSolicitudes({correo:Raw((columna) => `LOWER(${columna}) = LOWER(:correo)`, {correo})})};
     }
 
-    // Política de retención: los datos personales de las solicitudes se borran al cumplir el plazo
+    // Borra las solicitudes junto con sus reservas anuladas, en una transacción.
+    // La BD no deja borrar una solicitud que tenga otra reserva (FK sin cascada), así que si hay una reserva activa o una venta,
+    // incluso una creada justo ahora por otra persona, falla todo y se responde 409 sin perder la reserva.
+    private async borrarSolicitudes(where:FindOptionsWhere<Solicitud>):Promise<number>{
+        try{
+            return await this.solicitudRepository.manager.transaction(async (manager) => {
+                const ids = (await manager.find(Solicitud, {where, select:{id:true}, loadEagerRelations:false})).map((s) => s.id);
+                if(ids.length === 0) return 0;
+                await manager.createQueryBuilder().delete().from(Reserva)
+                    .where('id_solicitud IN (:...ids) AND estado = :anulada', {ids, anulada:EstadoReserva.ANULADA})
+                    .execute();
+                return (await manager.delete(Solicitud, {id:In(ids)})).affected ?? 0;
+            });
+        }catch(error){
+            if((error as {constraint?:string}).constraint === 'FK_reserva_solicitud'){
+                throw new ConflictException(MSJ_RESERVA_ACTIVA);
+            }
+            throw error;
+        }
+    }
+
+    // Retención: los datos personales de las solicitudes se borran al cumplir el plazo.
     @Cron(CronExpression.EVERY_DAY_AT_3AM, {timeZone:'America/Santiago'})
     async eliminarVencidas():Promise<number>{
         const dias = Number(this.configService.get('SOLICITUD_RETENCION_DIAS') ?? RETENCION_DIAS_POR_DEFECTO);
         const limite = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
-        // Las solicitudes con reserva activa o venta se conservan mientras dure el contrato
+        // Las solicitudes con reserva activa o venta se conservan mientras dure el contrato.
         const protegidas = await this.reservaRepository.find({
             where:{estado:In(ESTADOS_ACTIVOS)}, relations:{solicitud:true}, select:{id:true, solicitud:{id:true}},
         });
+        // Si alguien reserva una de estas solicitudes justo ahora, falla todo y se reintenta mañana.
         const ids = protegidas.map((r) => r.solicitud.id);
-        const resultado = await this.solicitudRepository.delete({creadoEn: LessThan(limite), ...(ids.length ? {id:Not(In(ids))} : {})});
-        const eliminadas = resultado.affected ?? 0;
+        const eliminadas = await this.borrarSolicitudes({creadoEn: LessThan(limite), ...(ids.length ? {id:Not(In(ids))} : {})});
 
         await this.auditoriaService.registrar({
             accion:'RETENCION_SOLICITUDES',

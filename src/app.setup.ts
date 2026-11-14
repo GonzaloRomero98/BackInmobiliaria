@@ -4,21 +4,20 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 
-// Configuración HTTP común a main.ts y a los tests e2e.
+// Configuración HTTP compartida por main.ts y los tests e2e.
 export function configurarApp(app: INestApplication) {
   const config = app.get(ConfigService);
 
   app.use(helmet());
 
-  // Solo los orígenes del frontend (lista separada por comas en CORS_ORIGINS)
   const origenes = (config.get<string>('CORS_ORIGINS') ?? 'http://localhost:3000')
     .split(',')
     .map((origen) => origen.trim())
     .filter(Boolean);
-  // credentials: en desarrollo el front (:3000) y la API (:3001) son orígenes distintos y la cookie de sesión debe viajar
+  // credentials es necesario para que la cookie de sesión viaje cuando el front y la API están en orígenes distintos.
   app.enableCors({ origin: origenes, credentials: true });
 
-  // Detrás de un proxy/balanceador (p. ej. ALB o Nginx) para que req.ip sea la IP real del cliente
+  // Detrás de Nginx o un balanceador, para que req.ip sea la IP real del cliente.
   const trustProxy = config.get<string>('TRUST_PROXY');
   if (trustProxy) {
     (app as NestExpressApplication).set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
@@ -33,7 +32,7 @@ export function configurarApp(app: INestApplication) {
 
   app.setGlobalPrefix('api');
 
-  // Documentación OpenAPI en /api/docs: apagada por defecto, se activa con SWAGGER=true (ISO 27001 A.8.9)
+  // Swagger está apagado por defecto y se activa con SWAGGER=true (ISO 27001 A.8.9).
   if (config.get<string>('SWAGGER') === 'true') {
     const documento = SwaggerModule.createDocument(
       app,

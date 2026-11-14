@@ -20,29 +20,26 @@ export class Proyecto{
     @Column({type:'varchar', length:200, nullable:true})
     direccion: string | null;
 
-    // Coordenadas WGS84 para el mapa y el entorno (servicios cercanos)
     @Column({type:'decimal', precision:9, scale:6, nullable:true, transformer:decimalANumero})
     latitud: number | null;
 
     @Column({type:'decimal', precision:9, scale:6, nullable:true, transformer:decimalANumero})
     longitud: number | null;
 
-    // Servicios cercanos (OpenStreetMap) calculados al guardar la ubicación; se piden aparte en /entorno
+    // Servicios cercanos calculados con OpenStreetMap al guardar la ubicación. Se piden aparte en /entorno.
     @Column({type:'jsonb', nullable:true, select:false})
     entorno: Entorno | null;
 
     @Column({name:'entorno_actualizado_en', type:'timestamp', nullable:true, select:false})
     entornoActualizadoEn: Date | null;
 
-    // null = sin informar (proyectos creados antes de este campo)
     @Column({type:'varchar', length:20, nullable:true})
     etapa: string | null;
 
-    // 'YYYY-MM-DD'; el driver pg entrega las columnas date como string
+    // pg entrega las columnas date como texto 'YYYY-MM-DD'.
     @Column({name:'fecha_entrega', type:'date', nullable:true})
     fechaEntrega: string | null;
 
-    // Sala de ventas (opcional): una por proyecto
     @Column({name:'sala_direccion', type:'varchar', length:200, nullable:true})
     salaDireccion: string | null;
 

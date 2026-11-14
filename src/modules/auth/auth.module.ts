@@ -7,9 +7,11 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./strategy/jwt.strategy";
 import { UsuarioController } from "../usuario/usuario.controller";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { SesionCerrada } from "./entities/sesionCerrada.entity";
 
 @Module({
-    imports:[UsuarioModule, 
+    imports:[UsuarioModule, TypeOrmModule.forFeature([SesionCerrada]),
         PassportModule.register({defaultStrategy:'jwt'}), 
         JwtModule.registerAsync({
             imports:[ConfigModule],
@@ -20,7 +22,7 @@ import { UsuarioController } from "../usuario/usuario.controller";
             }),
         }),
     ],
-    // UsuarioController vive aquí: UsuarioModule no puede importar AuthModule (dependencia circular)
+    // UsuarioController va aquí para evitar una dependencia circular entre UsuarioModule y AuthModule.
     controllers:[AuthController, UsuarioController],
     providers:[AuthService, JwtStrategy],
     exports:[PassportModule, JwtModule]

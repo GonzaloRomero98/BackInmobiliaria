@@ -2,8 +2,7 @@ import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, Primary
 import { Solicitud } from "./solicitud.entity";
 import { Usuario } from "../../usuario/entities/usuario.entity";
 
-// Seguimiento de un cliente ("llamé, no contestó"). No se editan ni se borran: para corregir se agrega otra.
-// Se borran solo junto con la solicitud (retención o supresión), por la FK en cascada.
+// Notas de seguimiento. No se editan ni se borran; para corregir se agrega otra.
 @Entity('nota_solicitud')
 export class NotaSolicitud{
     @PrimaryGeneratedColumn('uuid', {primaryKeyConstraintName:'PK_nota_solicitud'})
@@ -17,7 +16,6 @@ export class NotaSolicitud{
     @JoinColumn({name:'id_solicitud', foreignKeyConstraintName:'FK_nota_solicitud_solicitud'})
     solicitud:Solicitud;
 
-    // Quien la escribió (los usuarios se desactivan, no se borran; SET NULL por si acaso)
     @ManyToOne(()=> Usuario, {nullable:true, onDelete:'SET NULL'})
     @JoinColumn({name:'id_usuario', foreignKeyConstraintName:'FK_nota_solicitud_usuario'})
     usuario:Usuario | null;

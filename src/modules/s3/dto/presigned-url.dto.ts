@@ -11,7 +11,7 @@ export class PresginedUrlDto{
     @IsNotEmpty()
     contentType:string;
 
-    // Tamaño exacto del archivo en bytes: queda firmado en la URL y S3 rechaza otro tamaño
+    // Tamaño exacto en bytes. Queda firmado en la URL y S3 rechaza un archivo de otro tamaño.
     @IsInt()
     @IsPositive()
     tamano:number;

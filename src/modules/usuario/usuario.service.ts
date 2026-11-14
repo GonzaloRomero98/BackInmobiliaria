@@ -10,7 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { RolService } from "../rol/rol.service";
 import { S3Service } from "../s3/s3.service";
 
-// El hash de la contraseña (ni cuándo se cambió) nunca sale de la API
+// El hash de la contraseña nunca sale de la API.
 export function sinContrasena({contrasena: _hash, contrasenaCambiadaEn: _cambio, ...usuario}: Usuario){
     return usuario;
 }
@@ -28,7 +28,6 @@ export class UsuarioService{
 
 
     async crearUsuario(usuarioDto: CrearUsuarioDto):Promise<Usuario>{
-        // "Ana@x.cl" y "ana@x.cl" son el mismo correo: comparación exacta sin distinguir mayúsculas (sin LIKE)
         const existe = await this.usarioRepositorio.findOne({
             where:{ correo:Raw((columna) => `LOWER(${columna}) = LOWER(:correo)`, {correo:usuarioDto.correo})},
         });
@@ -57,7 +56,7 @@ export class UsuarioService{
     }
 
     async actualizarUsuario(id:string, dto:ActualizarUsuarioDto, idSolicitante:string){
-        // Evita que el admin se deje sin acceso a sí mismo
+        // Evita que el admin se quite el acceso a sí mismo.
         if(dto.activo === false && id === idSolicitante){
             throw new BadRequestException('No puedes desactivar tu propia cuenta');
         }
@@ -68,7 +67,7 @@ export class UsuarioService{
         if(dto.activo !== undefined) usuario.activo = dto.activo;
         if(dto.contrasena){
             usuario.contrasena = await bcrypt.hash(dto.contrasena, 10);
-            usuario.contrasenaCambiadaEn = new Date(); // cierra las sesiones abiertas de esa cuenta
+            usuario.contrasenaCambiadaEn = new Date();
         }
         return sinContrasena(await this.usarioRepositorio.save(usuario));
     }
@@ -79,7 +78,7 @@ export class UsuarioService{
             throw new BadRequestException('La contraseña actual no es correcta');
         }
         usuario.contrasena = await bcrypt.hash(dto.nueva, 10);
-        usuario.contrasenaCambiadaEn = new Date(); // cierra las demás sesiones abiertas
+        usuario.contrasenaCambiadaEn = new Date();
         await this.usarioRepositorio.save(usuario);
     }
 
@@ -104,7 +103,7 @@ export class UsuarioService{
                 if(!this.s3Service.keyDeUrl(dto.fotoUrl, 'perfiles')){
                     throw new BadRequestException('La foto debe subirse desde el perfil');
                 }
-                // Si se aceptara la foto de otro usuario, al cambiarla después se le borraría a él
+                // No se acepta la foto de otro usuario, porque al cambiarla después se le borraría a él.
                 if(await this.usarioRepositorio.findOne({where:{fotoUrl:dto.fotoUrl, id:Not(id)}})){
                     throw new ConflictException('Esa foto pertenece a otro usuario');
                 }
@@ -114,7 +113,7 @@ export class UsuarioService{
 
         const guardado = await this.usarioRepositorio.save(usuario);
 
-        // Se borra después de guardar: si el guardado falla, la foto vigente sigue existiendo
+        // La foto anterior se borra después de guardar, así si el guardado falla la foto actual sigue existiendo.
         const keyAnterior = fotoAnterior && fotoAnterior !== usuario.fotoUrl ? this.s3Service.keyDeUrl(fotoAnterior, 'perfiles') : null;
         if(keyAnterior){
             await this.s3Service.eliminarArchivo(keyAnterior).catch((error:Error) =>

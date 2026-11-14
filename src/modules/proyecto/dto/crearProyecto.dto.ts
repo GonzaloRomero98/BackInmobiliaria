@@ -49,7 +49,6 @@ export class CrearProyectoDto{
     @MaxLength(200)
     salaDireccion?:string | null;
 
-    // Texto libre, p. ej. "Lun a sáb 10:00 a 18:00"
     @IsOptional()
     @IsString()
     @MaxLength(150)
@@ -72,7 +71,6 @@ export class CrearProyectoDto{
     @Max(180)
     salaLongitud?:number | null;
 
-    // Confirma guardar aunque haya otro proyecto a menos de 50 m (sin esto se responde 409). No se guarda.
     @IsOptional()
     @IsBoolean()
     confirmarCercania?:boolean;

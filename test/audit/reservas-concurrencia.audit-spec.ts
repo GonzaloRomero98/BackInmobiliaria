@@ -1,5 +1,5 @@
-// Auditoría RF-11 / RF-14 contra PostgreSQL REAL (no mocks): concurrencia de reservas, estados finales
-// y retención. Requiere una BD desechable (AUDIT_DB_*); se ejecuta con test/audit/jest-audit.json.
+// Pruebas de reservas y retención contra PostgreSQL real, sin mocks.
+// Requiere una BD desechable (AUDIT_DB_*) y se ejecuta con test/audit/jest-audit.json.
 import { DataSource, Repository } from 'typeorm';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -22,6 +22,10 @@ import { ReservaService } from '../../src/modules/reserva/reserva.service';
 import { SolicitudService } from '../../src/modules/solicitud/solicitud.service';
 import { AuditoriaService } from '../../src/modules/auditoria/auditoria.service';
 import { EstadoReserva } from '../../src/modules/reserva/reserva.enum';
+import { JwtService } from '@nestjs/jwt';
+import { AuthService } from '../../src/modules/auth/auth.service';
+import { UsuarioService } from '../../src/modules/usuario/usuario.service';
+import { SesionCerrada } from '../../src/modules/auth/entities/sesionCerrada.entity';
 
 const env = process.env;
 let ds: DataSource;
@@ -55,7 +59,7 @@ beforeAll(async () => {
     username: env.AUDIT_DB_USER ?? 'postgres', password: env.AUDIT_DB_PASSWORD ?? 'auditoria',
     database: env.AUDIT_DB_NAME ?? 'auditoria',
     entities: [Usuario, Rol, Proyecto, NormativaProyecto, Ciudad, Region, ModeloCasa, GaleriaModeloCasa,
-      Caracteristica, Solicitud, NotaSolicitud, Cotizacion, Reserva, Auditoria],
+      Caracteristica, Solicitud, NotaSolicitud, Cotizacion, Reserva, Auditoria, SesionCerrada],
     migrations: migraciones, dropSchema: true, extra: { max: 20 },
   });
   await ds.initialize();
@@ -135,13 +139,11 @@ describe('Retención de la auditoría: 2 años (PostgreSQL real)', () => {
   it('borra solo el comienzo de la cadena con más de 2 años, la verificación sigue íntegra y lo reciente no se puede borrar', async () => {
     const auditoria = new AuditoriaService(ds.getRepository(Auditoria), ds.getRepository(Proyecto),
       ds.getRepository(ModeloCasa), ds.getRepository(Usuario), ds);
-    // Tabla limpia y 5 registros; se envejecen el 1, el 2 y el 4 (el 4 queda detrás del 3, que es reciente)
     await ds.query('ALTER TABLE auditoria DISABLE TRIGGER auditoria_sin_truncate');
     await ds.query('TRUNCATE auditoria');
     await ds.query('ALTER TABLE auditoria ENABLE TRIGGER auditoria_sin_truncate');
     for (let i = 1; i <= 5; i++) await auditoria.registrar({ accion: `PRUEBA_${i}`, exito: true });
     const viejos = ['1', '2', '4'];
-    // Envejecerlos cambia su hash: se recalcula para que la cadena siga calzando
     await ds.query('ALTER TABLE auditoria DISABLE TRIGGER auditoria_sin_cambios');
     await ds.query(`UPDATE auditoria SET fecha = now() - interval '3 years' WHERE secuencia = ANY($1::bigint[])`, [viejos]);
     for (const s of ['1', '2', '3', '4', '5']) {
@@ -151,18 +153,16 @@ describe('Retención de la auditoría: 2 años (PostgreSQL real)', () => {
     await ds.query('ALTER TABLE auditoria ENABLE TRIGGER auditoria_sin_cambios');
     expect((await auditoria.verificar()).integra).toBe(true);
 
-    // Un registro reciente sigue protegido aunque lo pida la propia API; TRUNCATE también
     await expect(ds.query('DELETE FROM auditoria WHERE secuencia = 3')).rejects.toThrow('solo inserción');
     await expect(ds.query('TRUNCATE auditoria')).rejects.toThrow('solo inserción');
 
-    // Solo el 1 y el 2: el 4 es viejo, pero borrarlo dejaría un hueco detrás del 3
+    // Solo el 1 y el 2: el 4 es antiguo, pero borrarlo dejaría un hueco detrás del 3.
     expect(await auditoria.purgarVencidos()).toBe(2);
     const quedan = await ds.getRepository(Auditoria).find({ order: { secuencia: 'ASC' } });
     expect(quedan.map((r) => r.accion)).toEqual(['PRUEBA_3', 'PRUEBA_4', 'PRUEBA_5', 'RETENCION_AUDITORIA']);
     expect(quedan[3].detalle).toMatchObject({ eliminados: 2, hastaSecuencia: '2' });
     expect(await auditoria.verificar()).toMatchObject({ integra: true, problemas: [] });
 
-    // Borrar un registro del medio (saltándose el trigger) se sigue detectando
     await ds.query('ALTER TABLE auditoria DISABLE TRIGGER auditoria_sin_cambios');
     await ds.query('DELETE FROM auditoria WHERE secuencia = 4');
     await ds.query('ALTER TABLE auditoria ENABLE TRIGGER auditoria_sin_cambios');
@@ -200,5 +200,79 @@ describe('RF-14 Privacidad y retención (PostgreSQL real)', () => {
     expect(quedan).not.toContain(vieja.id);
     expect(quedan).toEqual(expect.arrayContaining([viejaReservada.id, viejaVendida.id, reciente.id]));
     expect(await ds.getRepository(Auditoria).count({ where: { accion: 'RETENCION_SOLICITUDES' } })).toBeGreaterThan(0);
+  });
+});
+
+describe('Borrado de solicitudes sin cascada (PostgreSQL real)', () => {
+  const contarReservas = (modelo: ModeloCasa) =>
+    ds.getRepository(Reserva).count({ where: { solicitud: { modeloCasa: { id: modelo.id } } } });
+
+  it('borra en la misma transacción las reservas anuladas de la solicitud', async () => {
+    const modelo = await crearModelo(2);
+    const s = await crearSolicitud(modelo);
+    const r = await reservas.crear({ id_solicitud: s.id, rut: '12345678-5' });
+    await reservas.cambiarEstado(r.id, EstadoReserva.ANULADA);
+
+    await solicitudes.eliminarSolicitud(s.id);
+    expect(await ds.getRepository(Reserva).count({ where: { id: r.id } })).toBe(0);
+  });
+
+  it('la BD rechaza borrar una solicitud con reserva activa aunque alguien se salte el servicio', async () => {
+    const modelo = await crearModelo(2);
+    const s = await crearSolicitud(modelo);
+    await reservas.crear({ id_solicitud: s.id, rut: '12345678-5' });
+
+    await expect(ds.query('DELETE FROM solicitud WHERE id = $1', [s.id])).rejects.toMatchObject({ constraint: 'FK_reserva_solicitud' });
+    await expect(solicitudes.eliminarSolicitud(s.id)).rejects.toBeInstanceOf(ConflictException);
+    expect(await contarReservas(modelo)).toBe(1);
+  });
+
+  it('borrar y reservar la misma solicitud al mismo tiempo: gana uno solo y el contador de unidades nunca se descuadra', async () => {
+    for (let i = 0; i < 20; i++) {
+      const modelo = await crearModelo(3);
+      const s = await crearSolicitud(modelo);
+      const [borrado, reserva] = await Promise.allSettled([
+        solicitudes.eliminarSolicitud(s.id),
+        reservas.crear({ id_solicitud: s.id, rut: '12345678-5' }),
+      ]);
+
+      expect([borrado, reserva].filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      if (borrado.status === 'rejected') expect(borrado.reason).toBeInstanceOf(ConflictException);
+      const reservadas = (await recargar(modelo.id)).unidadesReservadas;
+      expect(reservadas).toBe(await contarReservas(modelo));
+      expect(reservadas).toBe(reserva.status === 'fulfilled' ? 1 : 0);
+    }
+  });
+});
+
+describe('Sesiones cerradas (PostgreSQL real)', () => {
+  it('la limpieza borra solo los tokens que ya vencieron', async () => {
+    const auth = new AuthService({} as UsuarioService, new JwtService({ secret: 'x' }), ds.getRepository(SesionCerrada));
+    const vencida = '44444444-4444-4444-8444-444444444444';
+    const vigente = '55555555-5555-4555-8555-555555555555';
+    await ds.getRepository(SesionCerrada).save([
+      { jti: vencida, venceEn: new Date(Date.now() - 60_000) },
+      { jti: vigente, venceEn: new Date(Date.now() + 60_000) },
+    ]);
+
+    expect(await auth.limpiarSesionesCerradas()).toBe(1);
+    expect((await ds.getRepository(SesionCerrada).find()).map((s) => s.jti)).toEqual([vigente]);
+  });
+});
+
+describe('Migraciones nuevas (PostgreSQL real)', () => {
+  const reglaFk = async () => (await ds.query(
+    `SELECT delete_rule FROM information_schema.referential_constraints WHERE constraint_name = 'FK_reserva_solicitud'`))[0]?.delete_rule;
+
+  it('ReservaSinCascada y SesionesCerradas se revierten y se vuelven a aplicar', async () => {
+    expect(await reglaFk()).toBe('NO ACTION');
+    await ds.undoLastMigration();
+    expect(await reglaFk()).toBe('CASCADE');
+    await ds.undoLastMigration();
+    expect((await ds.query(`SELECT to_regclass('sesion_cerrada') AS t`))[0].t).toBeNull();
+
+    await ds.runMigrations();
+    expect(await reglaFk()).toBe('NO ACTION');
+    expect((await ds.query(`SELECT to_regclass('sesion_cerrada') AS t`))[0].t).toBe('sesion_cerrada');
   });
 });

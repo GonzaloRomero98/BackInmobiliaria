@@ -14,6 +14,7 @@ import { CrearSolicitudPanelDto } from "./dto/crearSolicitudPanel.dto";
 import { CrearNotaDto } from "./dto/crearNota.dto";
 import { ActualizarVisitaDto } from "./dto/actualizarVisita.dto";
 import { CrearCotizacionDto } from "./dto/crearCotizacion.dto";
+import { CorregirDatosSolicitudDto } from "./dto/corregirDatosSolicitud.dto";
 
 type RequestConUsuario = Request & {user:{id:string, correo:string, rol:string}};
 
@@ -22,14 +23,13 @@ type RequestConUsuario = Request & {user:{id:string, correo:string, rol:string}}
 export class SolicitudController{
     constructor(private readonly solicitudService:SolicitudService){}
 
-    // Formulario público: máximo 5 envíos por minuto por IP contra spam
     @Post()
+    // Formulario público: máximo 5 envíos por minuto por IP contra el spam.
     @Throttle({default:{limit:5, ttl:60_000}})
     crearSolicitud(@Body() crearSolicitudDto:CrearSolicitudDto){
         return this.solicitudService.crearSolicitud(crearSolicitudDto);
     }
 
-    // Cliente que llega a la sala, llama o escribe: lo registra la secretaria
     @Post('panel')
     @ApiBearerAuth()
     @UseGuards(JwtAuthGuard, RolesGuard)
@@ -56,7 +56,7 @@ export class SolicitudController{
         return this.solicitudService.exportarCsv(req.user);
     }
 
-    // Solo el número de pendientes (contador del menú del panel): sin datos personales, por eso no se audita
+    // Solo el número de pendientes, sin datos personales, por eso no se audita.
     @Get('resumen')
     @ApiBearerAuth()
     @UseGuards(JwtAuthGuard, RolesGuard)
@@ -65,8 +65,7 @@ export class SolicitudController{
         return this.solicitudService.resumen();
     }
 
-    // Para la cotización: trae el modelo aunque sea borrador o su proyecto esté despublicado.
-    // Va después de 'exportar' y 'resumen' para que esas rutas no caigan en :id
+    // Va después de 'exportar' y 'resumen' para que esas rutas no se tomen como :id.
     @Get(':id')
     @ApiBearerAuth()
     @UseGuards(JwtAuthGuard, RolesGuard)
@@ -107,7 +106,16 @@ export class SolicitudController{
         return this.solicitudService.emitirCotizacion(id, dto, req.user.id);
     }
 
-    // Derecho de supresión: borra todas las solicitudes de una persona
+    // Derecho de rectificación: corrige nombre, apellido, correo o celular.
+    @Patch(':id')
+    @ApiBearerAuth()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(RolUsuario.SECRETARIO, RolUsuario.ADMIN)
+    corregirDatos(@Param('id',ParseUUIDPipe) id:string, @Body() dto:CorregirDatosSolicitudDto, @Req() req:RequestConUsuario){
+        return this.solicitudService.corregirDatos(id, dto, req.user.id);
+    }
+
+    // Derecho de supresión: borra todas las solicitudes de una persona.
     @Delete()
     @ApiBearerAuth()
     @UseGuards(JwtAuthGuard, RolesGuard)

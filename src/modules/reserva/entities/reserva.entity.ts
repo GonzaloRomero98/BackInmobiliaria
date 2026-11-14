@@ -2,22 +2,20 @@ import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGenerat
 import { Solicitud } from "../../solicitud/entities/solicitud.entity";
 import { EstadoReserva } from "../reserva.enum";
 
-// El comprador (nombre y contacto) sale de la solicitud; el RUT se pide al reservar en la sala de ventas
 @Entity('reserva')
 export class Reserva{
     @PrimaryGeneratedColumn('uuid')
     id:string;
 
-    // CASCADE: solo se llega a borrar una solicitud cuya reserva está anulada (SolicitudService lo impide en las demás)
-    @ManyToOne(()=> Solicitud, (solicitud) => solicitud.reservas, {nullable:false, onDelete:'CASCADE'})
+    // Sin cascada: la BD no deja borrar una solicitud que tenga reservas. SolicitudService borra antes las anuladas,
+    // así que si el borrado falla es porque hay una reserva activa o una venta (ver borrarSolicitudes).
+    @ManyToOne(()=> Solicitud, (solicitud) => solicitud.reservas, {nullable:false, onDelete:'NO ACTION'})
     @JoinColumn({name:'id_solicitud'})
     solicitud:Solicitud;
 
-    // Normalizado: 12345678-9
     @Column({type:'varchar', length:12})
     rut:string;
 
-    // Texto libre, ej: "Lote 12"
     @Column({type:'varchar', length:50, nullable:true})
     lote:string | null;
 

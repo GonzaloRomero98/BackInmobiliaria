@@ -1,6 +1,6 @@
 import { ArrayMaxSize, ArrayUnique, IsArray, IsUUID } from "class-validator";
 
-// Ids de TODAS las fotos del modelo, en el orden en que deben mostrarse
+// Ids de todas las fotos del modelo en el orden en que se muestran.
 export class OrdenarFotosDto{
     @IsArray()
     @ArrayMaxSize(100)

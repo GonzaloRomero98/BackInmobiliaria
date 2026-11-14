@@ -2,11 +2,9 @@ import { Auditoria } from "./entities/auditoria.entity";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Recursos cuyo nombre se muestra en la descripción (segmento de la ruta tras /api)
 export const RECURSOS_CON_NOMBRE = ['proyectos', 'modeloCasa', 'usuarios'] as const;
 export type RecursoConNombre = typeof RECURSOS_CON_NOMBRE[number];
 
-// "/api/proyectos/<uuid>/publicar" -> {recurso:'proyectos', id:'<uuid>', patron:'proyectos/:id/publicar'}
 export function analizarRuta(ruta: string | null): { recurso: string; id: string | null; patron: string } | null {
     if (!ruta?.startsWith('/api/')) return null;
     const segmentos = ruta.slice('/api/'.length).split('/').filter(Boolean);
@@ -20,10 +18,8 @@ export function analizarRuta(ruta: string | null): { recurso: string; id: string
 
 type Texto = (nombre: (articulo: string) => string) => string;
 
-// Sin nombre se pasa a indefinido: 'el proyecto' -> 'un proyecto', 'del modelo' -> 'de un modelo', 'al modelo' -> 'a un modelo'
 const INDEFINIDO: Record<string, string> = { el: 'un', del: 'de un', al: 'a un' };
 
-// Clave: "MÉTODO patrón". `nombre('del proyecto')` da 'del proyecto «X»', o 'de un proyecto' si ya no se encuentra.
 const DESCRIPCIONES: Record<string, Texto> = {
     'POST proyectos': () => 'Creó un proyecto',
     'PATCH proyectos/:id': (n) => `Editó ${n('el proyecto')}`,
@@ -35,7 +31,7 @@ const DESCRIPCIONES: Record<string, Texto> = {
 
     'POST modeloCasa': () => 'Creó un modelo',
     'PATCH modeloCasa/:id': (n) => `Editó ${n('el modelo')}`,
-    // La ruta ya no existe (se despublica con PATCH): se conserva para leer los registros antiguos
+    // Esta ruta ya no existe, pero se mantiene para describir los registros antiguos.
     'DELETE modeloCasa/:id': (n) => `Despublicó ${n('el modelo')}`,
     'DELETE modeloCasa/:id/definitivo': (n) => `Eliminó definitivamente ${n('el modelo')}`,
     'POST modeloCasa/:id/duplicar': (n) => `Duplicó ${n('el modelo')}`,
@@ -52,11 +48,14 @@ const DESCRIPCIONES: Record<string, Texto> = {
     'POST solicitudes/:id/notas': () => 'Agregó una nota a una solicitud',
     'PATCH solicitudes/:id/visita': () => 'Actualizó la visita de una solicitud',
     'POST solicitudes/:id/cotizaciones': () => 'Emitió una cotización',
+    'PATCH solicitudes/:id': () => 'Corrigió los datos de contacto de una solicitud',
     'DELETE solicitudes': () => 'Eliminó las solicitudes de un titular (derecho de supresión)',
     'DELETE solicitudes/:id': () => 'Eliminó una solicitud',
 
     'POST reservas': () => 'Registró una reserva',
     'PATCH reservas/:id/estado': () => 'Cambió el estado de una reserva',
+
+    'POST auth/logout': () => 'Cerró sesión',
 
     'POST usuarios': () => 'Creó un usuario',
     'PATCH usuarios/me': () => 'Editó su perfil',
@@ -77,8 +76,7 @@ function describirLogin(estado: number | null, exito: boolean): string {
 
 type RegistroDescribible = Pick<Auditoria, 'accion' | 'metodo' | 'ruta' | 'estado' | 'exito' | 'detalle'>;
 
-// Texto legible de un registro; null si la acción no está en la tabla (la vista muestra entonces la acción técnica).
-// `nombres` mapea id -> nombre actual del proyecto, modelo o usuario.
+// Texto legible de un registro. Devuelve null si la acción no está en la tabla, y la vista muestra la acción técnica.
 export function describirAccion(r: RegistroDescribible, nombres: ReadonlyMap<string, string>): string | null {
     if (r.accion === 'EXPORTAR_SOLICITUDES') return `Exportó las solicitudes a Excel (${r.detalle?.cantidad ?? '?'})`;
     if (r.accion === 'RETENCION_SOLICITUDES') {
@@ -93,7 +91,7 @@ export function describirAccion(r: RegistroDescribible, nombres: ReadonlyMap<str
 
     const texto = DESCRIPCIONES[`${r.metodo} ${ruta.patron}`];
     if (!texto) return null;
-    // Un recurso eliminado ya no está en la BD: su nombre quedó en el detalle del registro
+    // Si el recurso se eliminó, su nombre quedó guardado en el detalle del registro.
     const nombre = (ruta.id ? nombres.get(ruta.id) : undefined) ?? (typeof r.detalle?.nombre === 'string' ? r.detalle.nombre : undefined);
     return texto((articulo) => nombre ? `${articulo} «${nombre}»` : articulo.replace(/^(el|del|al) /, (_, a: string) => `${INDEFINIDO[a]} `));
 }

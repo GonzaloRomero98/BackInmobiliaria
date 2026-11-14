@@ -1,7 +1,8 @@
 import { CookieOptions, Request, Response } from "express";
+import { ExtractJwt } from "passport-jwt";
 
-// El JWT viaja en una cookie HttpOnly: el JavaScript de la página no puede leerla, así un XSS no roba la sesión.
-// Sin maxAge (cookie de sesión): se borra al cerrar el navegador; el JWT igual vence a las 8 h.
+// El JWT va en una cookie HttpOnly para que un XSS no pueda robar la sesión.
+// Sin maxAge se borra al cerrar el navegador. El JWT igual vence a las 8 horas.
 export const COOKIE_SESION = 'auth_token';
 const OPCIONES: CookieOptions = { httpOnly: true, secure: true, sameSite: 'strict', path: '/' };
 
@@ -13,7 +14,9 @@ export function borrarCookieSesion(res: Response) {
     res.clearCookie(COOKIE_SESION, OPCIONES);
 }
 
-// Extractor para passport-jwt (Express no trae cookie-parser; el JWT no tiene caracteres que codificar)
 export function tokenDeCookie(req: Request): string | null {
     return req?.headers?.cookie?.match(/(?:^|;\s*)auth_token=([^;]+)/)?.[1] ?? null;
 }
+
+// Cookie en el navegador y Bearer para Swagger y los tests. Lo usan la estrategia JWT y el logout.
+export const extraerToken = ExtractJwt.fromExtractors([tokenDeCookie, ExtractJwt.fromAuthHeaderAsBearerToken()]);

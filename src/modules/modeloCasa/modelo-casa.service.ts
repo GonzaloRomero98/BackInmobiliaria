@@ -103,11 +103,8 @@ export class ModeloCasaService{
 
         Object.assign(modelo, cambios);
         if(cambios.bono !== undefined) modelo.bono = cambios.bono?.trim() || null;
-        // Se valida el resultado combinado: p. ej. pasar un departamento sin terreno a casa
         this.exigirTerrenoEnCasas(modelo);
 
-        // save() escribe todas las columnas: los contadores se releen con la fila bloqueada (igual que ReservaService)
-        // para no pisar una reserva confirmada mientras se editaba
         return this.modeloCasaRepository.manager.transaction(async (manager) => {
             const actual = await manager.findOne(ModeloCasa, {where:{id}, lock:{mode:'pessimistic_write'}, loadEagerRelations:false});
             if(!actual){
@@ -130,10 +127,8 @@ export class ModeloCasaService{
         }
     }
 
-    // La copia nace como borrador DISPONIBLE y reutiliza las mismas URLs de S3: no sube ni copia archivos,
-    // así que no hay nada que limpiar en S3 si falla (y eliminarFoto solo borra la fila, nunca el archivo).
-    // Un solo save con cascada: modelo y galería se insertan en una transacción, o no se inserta nada.
-    // El nombre lo elige el admin; si ya existe se rechaza, sin inventar sufijos.
+    // La copia queda como borrador y usa las mismas URLs de S3, así que no hay archivos que limpiar si falla.
+    // Un solo save con cascada guarda el modelo y su galería en la misma transacción.
     async duplicarModeloCasa(id:string, nombreModelo:string):Promise<ModeloCasa>{
         const {id:_id, creadoEn:_creadoEn, fotos, ...datos} = await this.obtenerModeloAdmin(id);
 
@@ -147,18 +142,15 @@ export class ModeloCasaService{
         }));
     }
 
-    // El formulario lo consulta antes de subir la imagen y el .glb a S3: con un nombre repetido no se sube nada.
-    // Misma regla que crear/actualizar (coincidencia exacta); excluirId = el modelo que se está editando.
+    // El formulario lo consulta antes de subir archivos a S3.
     async nombreDisponible(nombreModelo:string, excluirId?:string):Promise<{disponible:boolean}>{
         const existente = await this.modeloCasaRepository.findOne({where:{nombreModelo}});
         return {disponible: !existente || existente.id === excluirId};
     }
 
-    // Borrado definitivo, solo si nadie lo ha solicitado: solicitudes y reservas son datos de clientes y ventas que no
-    // deben perderse (para sacarlo del catálogo está despublicar). Fotos, características y métricas se borran en cascada.
-    // Si entra una solicitud entre el conteo y el borrado, la FK de solicitud rechaza el DELETE y la transacción se deshace.
-    // shortcut: el .glb y las imágenes quedan en S3 (una copia duplicada puede usar los mismos archivos); limpiarlos
-    // requiere comprobar que ningún otro modelo o proyecto los referencia.
+    // Borrado definitivo, solo si nadie lo ha solicitado, porque las solicitudes y reservas son datos de clientes.
+    // Si entra una solicitud justo antes del borrado, la llave foránea rechaza el DELETE.
+    // Mejora pendiente: los archivos quedan en S3, porque una copia del modelo puede usar los mismos.
     async eliminarModeloCasa(id:string):Promise<{nombre:string}>{
         return this.modeloCasaRepository.manager.transaction(async (manager) => {
             const modelo = await manager.findOne(ModeloCasa, {where:{id}, select:{id:true, nombreModelo:true}, loadEagerRelations:false});
@@ -217,7 +209,6 @@ export class ModeloCasaService{
         return modelo;
     }
 
-    // Panel admin: incluye borradores y modelos de proyectos despublicados
     listarModelosAdmin():Promise<ModeloCasa[]>{
         return this.modeloCasaRepository.find({order:{nombreModelo:'ASC', fotos:{orden:'ASC'}}});
     }
@@ -261,7 +252,7 @@ export class ModeloCasaService{
         await this.galeriaRepository.remove(foto);
     }
 
-    // Exige la lista completa: un orden parcial dejaría posiciones repetidas con las fotos omitidas
+    // Exige la lista completa, porque un orden parcial dejaría posiciones repetidas.
     async ordenarFotos(id:string, ids:string[]){
         const fotos = await this.galeriaRepository.find({where:{modeloCasa:{id}}});
         const porId = new Map(fotos.map((f) => [f.id, f]));
@@ -269,7 +260,6 @@ export class ModeloCasaService{
             throw new BadRequestException('La lista debe contener exactamente las fotos del modelo');
         }
 
-        // save de un arreglo corre en una sola transacción
         const ordenadas = ids.map((fotoId, orden) => Object.assign(porId.get(fotoId)!, {orden}));
         await this.galeriaRepository.save(ordenadas);
         return ordenadas.map(({id:fotoId, urlImagen, orden}) => ({id:fotoId, urlImagen, orden}));

@@ -1,19 +1,14 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-// ISO 27001 A.8.15: cadena de hashes en la auditoría. Cada registro guarda su número de secuencia
-// (sin huecos), el hash del registro anterior y su propio hash (SHA-256 de todos sus campos).
-// Si alguien con acceso a la BD edita o borra un registro saltándose los triggers, la cadena
-// deja de calzar y `GET /auditoria/verificar` lo detecta.
-// El hash lo calcula Postgres en un trigger: la API no puede elegirlo, y un candado serializa
-// las inserciones para que dos peticiones simultáneas no enlacen con el mismo registro anterior.
+// ISO 27001 A.8.15: cadena de hashes en la auditoría. Cada registro guarda su secuencia, el hash del anterior y su propio hash (SHA-256).
+// Si alguien edita o borra un registro saltándose los triggers, la cadena deja de calzar y GET /auditoria/verificar lo detecta.
+// El hash lo calcula Postgres en un trigger, y un candado ordena las inserciones que llegan al mismo tiempo.
 export class AuditoriaEncadenada1793800000000 implements MigrationInterface {
     name = 'AuditoriaEncadenada1793800000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`ALTER TABLE "auditoria" ADD "secuencia" bigint, ADD "hash_anterior" character varying(64), ADD "hash" character varying(64)`);
 
-        // Texto estable de cada campo: to_char fija el formato de la fecha (no depende de DateStyle ni de TimeZone)
-        // y quote_nullable distingue NULL de un texto vacío. jsonb::text ya es canónico.
         await queryRunner.query(`
             CREATE FUNCTION auditoria_hash(auditoria) RETURNS text LANGUAGE sql STABLE AS $$
                 SELECT encode(sha256(convert_to(concat_ws('|',
@@ -26,8 +21,7 @@ export class AuditoriaEncadenada1793800000000 implements MigrationInterface {
                 ), 'UTF8')), 'hex')
             $$`);
 
-        // Encadena los registros que ya existen, del más antiguo al más nuevo (el trigger de solo inserción
-        // se apaga solo durante esta migración)
+        // Se encadenan los registros que ya existen. El trigger de solo inserción se apaga solo durante esta migración.
         await queryRunner.query(`ALTER TABLE "auditoria" DISABLE TRIGGER auditoria_sin_cambios`);
         await queryRunner.query(`
             DO $$

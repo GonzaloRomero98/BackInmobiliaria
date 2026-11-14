@@ -55,7 +55,7 @@ export class S3Service {
         return{uploadUrl, publicUrl, key, contentType}
     }
 
-    // Devuelve la key si la URL es un archivo subido por obtenerUrl a `carpeta` de este bucket; si no, null
+    // Devuelve la key solo si la URL es de un archivo de esa carpeta en este bucket.
     keyDeUrl(url:string, carpeta:CarpetaS3):string | null{
         const base = this.urlBase();
         if(!url.startsWith(base)) return null;

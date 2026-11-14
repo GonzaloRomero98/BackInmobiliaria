@@ -12,7 +12,7 @@ import { RegistrarEventoDto } from "./dto/registrarEvento.dto";
 const DIA_MS = 24 * 60 * 60 * 1000;
 export const SEMANAS_GRAFICO = 8;
 
-// Lunes 00:00 (hora del servidor, la misma con que se guardan las fechas) de la semana de `fecha`
+// Lunes a las 00:00 de la semana de la fecha, en la hora del servidor.
 export function inicioSemana(fecha: Date): Date {
     const lunes = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
     lunes.setDate(lunes.getDate() - ((lunes.getDay() + 6) % 7));
@@ -21,7 +21,6 @@ export function inicioSemana(fecha: Date): Date {
 
 const claveDia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-// Resumen para la página de inicio del panel admin
 @Injectable()
 export class MetricasService{
     constructor(
@@ -37,7 +36,7 @@ export class MetricasService{
         private readonly eventoRepository: Repository<EventoModelo>,
     ){}
 
-    // Solo modelos publicados: un id inventado o de un borrador no suma a la métrica
+    // Solo cuenta modelos publicados, así un id inventado no suma.
     async registrarEvento({id_modelo_casa, tipo}:RegistrarEventoDto):Promise<void>{
         if(!(await this.modeloCasaRepository.exists({where:{id:id_modelo_casa, activo:true}}))){
             throw new NotFoundException('Modelo no encontrado');
@@ -57,11 +56,9 @@ export class MetricasService{
             this.solicitudRepository.count(),
             this.solicitudRepository.count({where:{contactado:false}}),
             this.solicitudRepository.count({where:{creadoEn:MoreThanOrEqual(hace30Dias)}}),
-            // Los 30 días anteriores: para mostrar si las solicitudes suben o bajan
             this.solicitudRepository.count({where:{creadoEn:And(MoreThanOrEqual(hace60Dias), LessThan(hace30Dias))}}),
             this.modeloCasaRepository.count({where:{activo:true}}),
             this.modeloCasaRepository.count({where:{activo:false}}),
-            // Casas (unidades) de los modelos publicados, no cantidad de modelos
             this.modeloCasaRepository.createQueryBuilder('m')
                 .select('SUM(m.unidades)', 'unidades')
                 .addSelect('SUM(m.unidadesReservadas)', 'reservados')
@@ -70,7 +67,6 @@ export class MetricasService{
                 .getRawOne<{unidades:string|null, reservados:string|null, vendidos:string|null}>(),
             this.proyectoRepository.count({where:{activo:true}}),
             this.reservaRepository.count({where:{creadoEn:MoreThanOrEqual(inicioMes)}}),
-            // VENDIDA es un estado final: la última actualización es la fecha de la venta
             this.reservaRepository.count({where:{estado:EstadoReserva.VENDIDA, actualizadoEn:MoreThanOrEqual(inicioMes)}}),
             this.proximasVisitas(ahora, 5),
             this.solicitudRepository.createQueryBuilder('s')
@@ -95,12 +91,10 @@ export class MetricasService{
             this.eventoRepository.count({where:{tipo:TipoEventoModelo.AR_INICIADA, creadoEn:MoreThanOrEqual(hace30Dias)}}),
         ]);
 
-        // SUM llega como string, o null si no hay modelos
         const unidades = Number(casas?.unidades ?? 0);
         const reservados = Number(casas?.reservados ?? 0);
         const vendidos = Number(casas?.vendidos ?? 0);
 
-        // Las 8 semanas completas, con 0 en las que no tuvieron solicitudes
         const conteoSemana = new Map(porSemana.map((s) => [claveDia(new Date(s.semana)), Number(s.solicitudes)]));
         const semanas = Array.from({length:SEMANAS_GRAFICO}, (_, i) => {
             const lunes = new Date(primeraSemana);
@@ -113,16 +107,13 @@ export class MetricasService{
             modelos: {publicados, borradores, unidades, disponibles: unidades - reservados - vendidos, reservados, vendidos},
             proyectosActivos,
             reservas: {reservasMes, ventasMes},
-            // Datos personales (nombre de quien visita): por eso GET /metricas se audita como lectura de datos personales
             visitas,
-            // COUNT llega como string desde Postgres
             masSolicitados: masSolicitados.map((m) => ({...m, solicitudes: Number(m.solicitudes)})),
             experiencia3d: {escaneosQr, sesionesAr},
         };
     }
 
-    // Panel de la secretaria: a quién contactar primero, agenda de visitas y reservas por cerrar.
-    // Trae nombres y celulares: GET /metricas/seguimiento se audita como lectura de datos personales.
+    // Trae nombres y celulares, por eso GET /metricas/seguimiento se audita como lectura de datos personales.
     async seguimiento(ahora = new Date()){
         const inicioDia = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
         const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
@@ -158,7 +149,6 @@ export class MetricasService{
         };
     }
 
-    // Visitas a sala de ventas en los próximos 7 días (las `limite` más cercanas) y cuántas son en total
     private async proximasVisitas(ahora: Date, limite: number){
         const [visitas, total] = await this.solicitudRepository.findAndCount({
             where:{visitaPreferida:And(MoreThanOrEqual(ahora), LessThan(new Date(ahora.getTime() + 7 * DIA_MS)))},

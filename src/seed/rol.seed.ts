@@ -10,8 +10,7 @@ import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
 import { CrearUsuarioDto } from "../modules/usuario/dto/crearUsuario.dto";
 
-// Crea los roles que faltan y, si ADMIN_CORREO y ADMIN_CONTRASENA están definidos
-// (en el .env o en el entorno), el primer usuario ADMIN.
+// Crea los roles que faltan y, si están ADMIN_CORREO y ADMIN_CONTRASENA, el primer usuario ADMIN.
 async function boostrap() {
     const app = await NestFactory.createApplicationContext(AppModule);
     const rolRepositorio = app.get<Repository<Rol>>(getRepositoryToken(Rol));
@@ -37,7 +36,6 @@ async function boostrap() {
                 nombre: config.get<string>('ADMIN_NOMBRE') ?? 'Administrador',
                 rol: RolUsuario.ADMIN,
             });
-            // Misma validación (incluida la política de contraseñas) que el endpoint de registro
             const errores = await validate(dto);
             if(errores.length){
                 console.error('datos del ADMIN inválidos:', errores.flatMap((e) => Object.values(e.constraints ?? {})).join('; '));

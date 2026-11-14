@@ -34,8 +34,8 @@ import { esLecturaSsr } from "./limite-ssr";
       useFactory: (config: ConfigService) =>
         opcionesBaseDatos((clave) => config.get<string>(clave)),
     }),
-    // Límite general por IP; login y formulario público tienen límites más estrictos.
-    // Las lecturas del SSR de Next quedan fuera (ver limite-ssr.ts)
+    // Límite general por IP. El login y el formulario público tienen límites más estrictos,
+    // y las lecturas del SSR de Next quedan fuera (limite-ssr.ts).
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 100 }],
       skipIf: (contexto) => esLecturaSsr(contexto.switchToHttp().getRequest()),

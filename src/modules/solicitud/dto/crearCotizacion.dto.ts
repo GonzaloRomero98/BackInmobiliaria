@@ -10,7 +10,7 @@ class ValorUfDto{
     fecha: string;
 }
 
-// Las condiciones que eligió la secretaria (mismos rangos que el formulario). El precio y el modelo los pone el servidor.
+// Solo las condiciones que elige la secretaria. El precio y el modelo los pone el servidor.
 export class CrearCotizacionDto{
     @IsNumber()
     @Min(0)
@@ -37,7 +37,6 @@ export class CrearCotizacionDto{
     @MaxLength(300)
     nota?: string;
 
-    // UF del día con que se calcularon las equivalencias; null si mindicador.cl no respondió
     @IsOptional()
     @ValidateNested()
     @Type(() => ValorUfDto)

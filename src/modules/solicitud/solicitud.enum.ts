@@ -1,4 +1,3 @@
-// De dónde llegó el cliente: la web, o la secretaria la registró desde el panel
 export enum OrigenSolicitud{
     WEB = 'WEB',
     SALA_VENTAS = 'SALA_VENTAS',
@@ -10,7 +9,6 @@ export const ETIQUETA_ORIGEN: Record<OrigenSolicitud, string> = {
     WEB: 'Web', SALA_VENTAS: 'Sala de ventas', TELEFONO: 'Teléfono', WHATSAPP: 'WhatsApp',
 };
 
-// null en la solicitud = sin visita. Asistió / No asistió solo cuando la fecha ya pasó.
 export enum EstadoVisita{
     POR_CONFIRMAR = 'POR_CONFIRMAR',
     CONFIRMADA = 'CONFIRMADA',
