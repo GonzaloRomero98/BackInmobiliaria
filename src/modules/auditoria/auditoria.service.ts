@@ -69,7 +69,8 @@ export class AuditoriaService{
 
     // Nunca lanza error: un fallo al auditar no debe botar la petición, pero queda en el log.
     async registrar(registro: RegistroAuditoria): Promise<void>{
-        this.logger.log(`${registro.accion} exito=${registro.exito} usuario=${registro.correo ?? '-'} ip=${registro.ip ?? '-'}`);
+        // Sin correo ni IP: los logs de PM2 no tienen retención. Esos datos quedan solo en la tabla auditoria.
+        this.logger.log(`${registro.accion} exito=${registro.exito}`);
         try{
             await this.auditoriaRepository.save(this.auditoriaRepository.create(registro));
         }catch(error){
