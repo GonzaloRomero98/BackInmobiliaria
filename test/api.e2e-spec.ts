@@ -227,6 +227,11 @@ describe('API (e2e, BD simulada)', () => {
       await http().get('/api/health').expect(503);
     });
 
+    it('GET /api/health tiene el límite por IP: la 101.ª da 429', async () => {
+      for (let i = 0; i < 100; i++) await http().get('/api/health').expect(200);
+      await http().get('/api/health').expect(429);
+    });
+
     it('GET /api/docs-json publica el OpenAPI con autenticación Bearer', async () => {
       const res = await http().get('/api/docs-json').expect(200);
       expect(res.body.info.title).toBe('Inmocap API');

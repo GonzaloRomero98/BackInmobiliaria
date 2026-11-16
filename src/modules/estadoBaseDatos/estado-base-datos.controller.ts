@@ -1,10 +1,9 @@
 import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
-import { SkipThrottle } from "@nestjs/throttler";
 import { ApiTags } from "@nestjs/swagger";
 import { DataSource } from "typeorm";
 
+// Tiene el límite general por IP, porque cada consulta hace un SELECT a la BD.
 @ApiTags('estado base de datos')
-@SkipThrottle()
 @Controller('health')
 export class EstadoBaseDatosController{
     constructor(private readonly dataSource: DataSource){}
