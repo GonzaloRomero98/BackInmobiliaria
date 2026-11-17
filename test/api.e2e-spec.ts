@@ -370,6 +370,9 @@ describe('API (e2e, BD simulada)', () => {
     it('GET /api/modeloCasa?tipoOperacion=OTRO -> 400', () =>
       http().get('/api/modeloCasa?tipoOperacion=OTRO').expect(400));
 
+    it('GET /api/modeloCasa?tipoVivienda=OTRO -> 400', () =>
+      http().get('/api/modeloCasa?tipoVivienda=OTRO').expect(400));
+
     it('GET /api/modeloCasa?tipoOperacion=VENTA -> 200', async () => {
       await http().get('/api/modeloCasa?tipoOperacion=VENTA').expect(200);
       expect(repo(ModeloCasa).find.mock.calls[0][0].where.tipoOperacion).toBe('VENTA');
@@ -390,10 +393,10 @@ describe('API (e2e, BD simulada)', () => {
 
     it('convierte los filtros del query string a números y booleanos', async () => {
       await http()
-        .get('/api/modeloCasa?tipoOperacion=VENTA&moneda=UF&precioMin=2000&precioMax=4000&dormitorios=3&banos=2&superficieMin=80&mascotas=true&id_region=7&orden=precio_asc')
+        .get('/api/modeloCasa?tipoOperacion=VENTA&tipoVivienda=DEPARTAMENTO&moneda=UF&precioMin=2000&precioMax=4000&dormitorios=3&banos=2&superficieMin=80&mascotas=true&id_region=7&orden=precio_asc')
         .expect(200);
       const w = where();
-      expect(w).toMatchObject({ tipoOperacion: 'VENTA', moneda: 'UF', mascotas: true });
+      expect(w).toMatchObject({ tipoOperacion: 'VENTA', tipoVivienda: 'DEPARTAMENTO', moneda: 'UF', mascotas: true });
       expect(w.precio).toMatchObject({ type: 'between', value: [2000, 4000] });
       expect(w.dormitorios).toMatchObject({ value: 3 });
       expect(w.proyecto).toEqual({ activo: true, ciudad: { region: { id: 7 } } });

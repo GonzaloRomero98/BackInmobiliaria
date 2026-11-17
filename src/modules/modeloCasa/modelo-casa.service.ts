@@ -185,6 +185,7 @@ export class ModeloCasaService{
             activo:true,
             proyecto: {activo:true, ...(filtros.id_proyecto && {id:filtros.id_proyecto}), ...(ciudad && {ciudad})},
             ...(filtros.tipoOperacion && {tipoOperacion:filtros.tipoOperacion}),
+            ...(filtros.tipoVivienda && {tipoVivienda:filtros.tipoVivienda}),
             ...(filtros.moneda && {moneda:filtros.moneda}),
             ...(filtros.mascotas !== undefined && {mascotas:filtros.mascotas}),
         };

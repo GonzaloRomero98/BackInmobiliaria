@@ -1,6 +1,6 @@
 import { Transform, Type } from "class-transformer";
 import { IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsUUID, Min } from "class-validator";
-import { Moneda, TipoOperacion } from "../modelo-casa.enum";
+import { Moneda, TipoOperacion, TipoVivienda } from "../modelo-casa.enum";
 
 export const ORDENES_MODELO = ['precio_asc', 'precio_desc', 'superficie_desc', 'recientes'] as const;
 export type OrdenModelo = typeof ORDENES_MODELO[number];
@@ -28,6 +28,10 @@ export class FiltrosModeloCasaDto{
     @IsInt()
     @IsPositive()
     id_ciudad?:number;
+
+    @IsOptional()
+    @IsEnum(TipoVivienda)
+    tipoVivienda?:TipoVivienda;
 
     @IsOptional()
     @IsEnum(Moneda)
