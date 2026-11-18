@@ -2,8 +2,7 @@ import { Column, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, UpdateDat
 import { Proyecto } from "./proyecto.entity";
 import { decimalANumero } from "../../../database/transformadores";
 
-// Normativa urbana del terreno según el plan regulador.
-// Es referencial: la fuente oficial es el Certificado de Informaciones Previas (CIP) de la DOM.
+// Normativa referencial: la fuente oficial es el Certificado de Informaciones Previas (CIP) de la DOM.
 @Entity('normativa_proyecto')
 export class NormativaProyecto{
     @PrimaryGeneratedColumn('uuid')

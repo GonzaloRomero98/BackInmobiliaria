@@ -23,7 +23,7 @@ export class JwtStrategy extends PassportStrategy(Strategy){
     async validate(payload:{sub:string, correo:string, rol:string, iat:number, jti?:string}) {
         const [usuario, cerrada] = await Promise.all([
             this.usuarioService.usuarioPorId(payload.sub),
-            // Los tokens emitidos antes de que existiera jti no se pueden cerrar uno a uno, pero vencen a las 8 horas.
+            // Sin jti, where:{jti:undefined} coincidiría con cualquier sesión cerrada.
             payload.jti ? this.sesionesCerradas.exists({where:{jti:payload.jti}}) : false,
         ]);
         if(!usuario || !usuario.activo || cerrada){

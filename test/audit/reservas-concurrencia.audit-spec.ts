@@ -19,6 +19,7 @@ import { Cotizacion } from '../../src/modules/solicitud/entities/cotizacion.enti
 import { Reserva } from '../../src/modules/reserva/entities/reserva.entity';
 import { Auditoria } from '../../src/modules/auditoria/entities/auditoria.entity';
 import { ReservaService } from '../../src/modules/reserva/reserva.service';
+import { CorreoService } from '../../src/modules/correo/correo.service';
 import { SolicitudService } from '../../src/modules/solicitud/solicitud.service';
 import { AuditoriaService } from '../../src/modules/auditoria/auditoria.service';
 import { EstadoReserva } from '../../src/modules/reserva/reserva.enum';
@@ -75,7 +76,7 @@ beforeAll(async () => {
     ds.getRepository(ModeloCasa), ds.getRepository(Usuario), ds);
   solicitudes = new SolicitudService(ds.getRepository(Solicitud), modelos,
     new ConfigService({ SOLICITUD_RETENCION_DIAS: '365' }), auditoria, ds.getRepository(Reserva),
-    ds.getRepository(NotaSolicitud), ds.getRepository(Cotizacion));
+    ds.getRepository(NotaSolicitud), ds.getRepository(Cotizacion), new CorreoService(new ConfigService({})));
 }, 120_000);
 
 afterAll(async () => { await ds?.destroy(); });

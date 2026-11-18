@@ -11,7 +11,6 @@ const MODELOS_3D: Record<string, string> = {
     'model/gltf+json': 'gltf',
 };
 
-// Tipos de archivo y tamaño máximo permitidos en cada carpeta.
 export const REGLAS_CARPETA = {
     proyectos: {tipos: IMAGENES, maxBytes: 10 * MB},
     modelosImagenes: {tipos: IMAGENES, maxBytes: 10 * MB},

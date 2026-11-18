@@ -8,11 +8,12 @@ import { SolicitudController } from "./solicitud.controller";
 import { SolicitudService } from "./solicitud.service";
 import { NotaSolicitud } from "./entities/notaSolicitud.entity";
 import { Cotizacion } from "./entities/cotizacion.entity";
+import { CorreoService } from "../correo/correo.service";
 
 @Module({
     imports:[TypeOrmModule.forFeature([Solicitud, ModeloCasa, Reserva, NotaSolicitud, Cotizacion]), AuthModule],
     controllers:[SolicitudController],
-    providers:[SolicitudService],
+    providers:[SolicitudService, CorreoService],
     exports:[TypeOrmModule]
 })
 export class SolicitudModule{}

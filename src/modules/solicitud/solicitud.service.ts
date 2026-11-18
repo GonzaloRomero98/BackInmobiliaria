@@ -18,9 +18,14 @@ import { CrearSolicitudPanelDto } from "./dto/crearSolicitudPanel.dto";
 import { ActualizarVisitaDto } from "./dto/actualizarVisita.dto";
 import { CrearCotizacionDto } from "./dto/crearCotizacion.dto";
 import { ETIQUETA_ORIGEN, ETIQUETA_VISITA, EstadoVisita, OrigenSolicitud } from "./solicitud.enum";
+import { CorreoService } from "../correo/correo.service";
 
 const fechaHoraChile = (fecha: Date) => fecha.toLocaleString('es-CL', {
     timeZone:'America/Santiago', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hourCycle:'h23',
+});
+// Para el cliente se usa una fecha más legible, por ejemplo "martes, 24 de noviembre, 11:00".
+const fechaParaCliente = (fecha: Date) => fecha.toLocaleString('es-CL', {
+    timeZone:'America/Santiago', weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit', hourCycle:'h23',
 });
 
 const RETENCION_DIAS_POR_DEFECTO = 365;
@@ -50,7 +55,8 @@ export class SolicitudService{
         @InjectRepository(NotaSolicitud)
         private readonly notaRepository : Repository<NotaSolicitud>,
         @InjectRepository(Cotizacion)
-        private readonly cotizacionRepository : Repository<Cotizacion>
+        private readonly cotizacionRepository : Repository<Cotizacion>,
+        private readonly correoService: CorreoService
     ){}
 
     crearSolicitud(crearSolicitudDto:CrearSolicitudDto):Promise<Solicitud>{
@@ -84,7 +90,37 @@ export class SolicitudService{
             solicitud.origen = origen;
             solicitud.contactado = desdePanel;
 
-        return this.solicitudRepository.save(solicitud);
+        const guardada = await this.solicitudRepository.save(solicitud);
+        if(visitaPreferida) this.avisarVisita(guardada, desdePanel);
+        return guardada;
+    }
+
+    // Se envía sin esperar la respuesta de Gmail para no demorar la petición.
+    private avisarVisita(solicitud:Solicitud, confirmada:boolean):void{
+        const proyecto = solicitud.modeloCasa.proyecto;
+        const fecha = fechaParaCliente(solicitud.visitaPreferida!);
+        const destino = proyecto.salaLatitud !== null && proyecto.salaLongitud !== null
+            ? `${proyecto.salaLatitud},${proyecto.salaLongitud}` : proyecto.salaDireccion ?? '';
+        const lineas = [
+            `Hola ${solicitud.nombre}:`,
+            '',
+            confirmada
+                ? `Tu visita a la sala de ventas de ${proyecto.nombre} (modelo ${solicitud.modeloCasa.nombreModelo}) está confirmada para el ${fecha}.`
+                : `Recibimos tu solicitud de visita a la sala de ventas de ${proyecto.nombre} (modelo ${solicitud.modeloCasa.nombreModelo}) para el ${fecha}. Te contactaremos dentro de 48 horas para confirmarla.`,
+            '',
+            `Dirección: ${proyecto.salaDireccion}`,
+            proyecto.salaHorario ? `Horario: ${proyecto.salaHorario}` : null,
+            proyecto.salaTelefono ? `Teléfono: ${proyecto.salaTelefono}` : null,
+            `Cómo llegar: https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destino)}`,
+            '',
+            'Saludos,',
+            'Equipo de ventas Inmocap',
+        ];
+        void this.correoService.enviar(
+            solicitud.correo,
+            confirmada ? `Visita confirmada: ${proyecto.nombre}` : `Recibimos tu solicitud de visita: ${proyecto.nombre}`,
+            lineas.filter((linea) => linea !== null).join('\n'),
+        );
     }
 
     // Solo si el proyecto tiene sala de ventas, y entre ahora y VISITA_DIAS_MAXIMOS días.
@@ -173,6 +209,7 @@ export class SolicitudService{
             throw new NotFoundException('Solicitud no encontrada');
         }
         let nota: string | null = null;
+        const estadoAnterior = solicitud.visitaEstado;
         if(fecha){
             const nueva = this.validarVisita(fecha, solicitud.modeloCasa)!;
             const anterior = solicitud.visitaPreferida;
@@ -194,13 +231,18 @@ export class SolicitudService{
         if(solicitud.visitaEstado !== EstadoVisita.POR_CONFIRMAR){
             solicitud.contactado = true;
         }
-        return this.solicitudRepository.manager.transaction(async (manager) => {
+        const guardada = await this.solicitudRepository.manager.transaction(async (manager) => {
             const guardada = await manager.save(solicitud);
             if(nota){
                 await manager.save(manager.create(NotaSolicitud, {texto:nota, solicitud:{id}, usuario:{id:idUsuario}}));
             }
             return guardada;
         });
+        // Se avisa al confirmar o al cambiar la fecha de una visita confirmada, no al marcar la asistencia.
+        if(guardada.visitaEstado === EstadoVisita.CONFIRMADA && (fecha || estadoAnterior !== EstadoVisita.CONFIRMADA)){
+            this.avisarVisita(guardada, true);
+        }
+        return guardada;
     }
 
     // Guarda el precio y el modelo leídos aquí junto con las condiciones elegidas. El folio lo asigna la BD.

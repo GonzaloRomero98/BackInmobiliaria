@@ -8,6 +8,7 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { Reserva } from '../reserva/entities/reserva.entity';
 import { NotaSolicitud } from './entities/notaSolicitud.entity';
 import { Cotizacion } from './entities/cotizacion.entity';
+import { CorreoService } from '../correo/correo.service';
 
 describe('SolicitudService', () => {
   let solicitudRepo: { exists: jest.Mock; findOne: jest.Mock; find: jest.Mock; findAndCount: jest.Mock; count: jest.Mock; save: jest.Mock; delete: jest.Mock };
@@ -18,6 +19,7 @@ describe('SolicitudService', () => {
   let cotizacionRepo: { find: jest.Mock; save: jest.Mock; create: jest.Mock };
   let manager: { save: jest.Mock; create: jest.Mock; find: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
   let qbReserva: Record<'delete' | 'from' | 'where' | 'execute', jest.Mock>;
+  let correo: { enviar: jest.Mock };
   let service: SolicitudService;
   const dto = {
     nombre: 'Juan', apellido: 'Pérez', correo: 'j@p.cl', celular: '+56911111111',
@@ -33,6 +35,7 @@ describe('SolicitudService', () => {
       reservaRepo as unknown as Repository<Reserva>,
       notaRepo as unknown as Repository<NotaSolicitud>,
       cotizacionRepo as unknown as Repository<Cotizacion>,
+      correo as unknown as CorreoService,
     );
   }
 
@@ -55,6 +58,7 @@ describe('SolicitudService', () => {
     modeloRepo = { findOne: jest.fn() };
     reservaRepo = { exists: jest.fn().mockResolvedValue(false), find: jest.fn().mockResolvedValue([]) };
     auditoria = { registrar: jest.fn() };
+    correo = { enviar: jest.fn(async () => undefined) };
     crear();
   });
 
@@ -312,13 +316,17 @@ describe('SolicitudService', () => {
   });
 
   describe('origen', () => {
-    const conSala = { id: 'm1', proyecto: { salaDireccion: '1 Sur 100' } };
+    const conSala = { id: 'm1', nombreModelo: 'Casa A', proyecto: { nombre: 'Los Robles', salaDireccion: '1 Sur 100', salaLatitud: null, salaLongitud: null } };
     const enDias = (d: number) => new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
 
     it('la web queda WEB, pendiente y con la visita por confirmar', async () => {
       modeloRepo.findOne.mockResolvedValue(conSala);
       const s = await service.crearSolicitud({ ...dto, visitaPreferida: enDias(2) });
       expect(s).toMatchObject({ origen: 'WEB', contactado: false, visitaEstado: 'POR_CONFIRMAR' });
+      const [para, asunto, texto] = correo.enviar.mock.calls[0];
+      expect([para, asunto]).toEqual(['j@p.cl', 'Recibimos tu solicitud de visita: Los Robles']);
+      expect(texto).toContain('dentro de 48 horas');
+      expect(texto).toContain('destination=1%20Sur%20100');
     });
 
     it('desde el panel queda contactada, con su origen y la visita confirmada', async () => {
@@ -327,6 +335,7 @@ describe('SolicitudService', () => {
       const s = await service.crearDesdePanel({ ...datos, origen: 'TELEFONO' as never, clienteInformado: true, visitaPreferida: enDias(2) });
       expect(s).toMatchObject({ origen: 'TELEFONO', contactado: true, visitaEstado: 'CONFIRMADA' });
       expect(s.consentimientoEn).toBeInstanceOf(Date);
+      expect(correo.enviar.mock.calls[0][1]).toBe('Visita confirmada: Los Robles');
     });
 
     it('sin visita, el estado de la visita es null', async () => {
@@ -363,8 +372,26 @@ describe('SolicitudService', () => {
   describe('visita', () => {
     const enHoras = (h: number) => new Date(Date.now() + h * 60 * 60 * 1000);
     const conVisita = (visita: Date | null, estado: string | null = 'POR_CONFIRMAR') => ({
-      id: 's1', contactado: false, visitaPreferida: visita, visitaEstado: estado,
-      modeloCasa: { proyecto: { salaDireccion: '1 Sur 100' } },
+      id: 's1', nombre: 'Juan', correo: 'j@p.cl', contactado: false, visitaPreferida: visita, visitaEstado: estado,
+      modeloCasa: { nombreModelo: 'Casa A', proyecto: { nombre: 'Los Robles', salaDireccion: '1 Sur 100', salaLatitud: null, salaLongitud: null } },
+    });
+
+    it('avisa por correo al confirmar o reagendar, pero no al marcar la asistencia', async () => {
+      solicitudRepo.findOne.mockResolvedValue(conVisita(enHoras(24)));
+      await service.actualizarVisita('s1', { estado: 'CONFIRMADA' as never }, 'u1');
+      expect(correo.enviar).toHaveBeenCalledWith('j@p.cl', 'Visita confirmada: Los Robles', expect.stringContaining('está confirmada'));
+
+      correo.enviar.mockClear();
+      solicitudRepo.findOne.mockResolvedValue(conVisita(enHoras(24), 'CONFIRMADA'));
+      await service.actualizarVisita('s1', { fecha: enHoras(48).toISOString() }, 'u1');
+      expect(correo.enviar).toHaveBeenCalledTimes(1);
+
+      correo.enviar.mockClear();
+      solicitudRepo.findOne.mockResolvedValue(conVisita(enHoras(-2), 'CONFIRMADA'));
+      await service.actualizarVisita('s1', { estado: 'ASISTIO' as never }, 'u1');
+      solicitudRepo.findOne.mockResolvedValue(conVisita(enHoras(24), 'CONFIRMADA'));
+      await service.actualizarVisita('s1', { estado: 'CONFIRMADA' as never }, 'u1');
+      expect(correo.enviar).not.toHaveBeenCalled();
     });
 
     it('reagendar cambia la fecha, la deja confirmada y anota la fecha anterior', async () => {
