@@ -1,5 +1,6 @@
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Matches, Max, MaxLength, Min } from "class-validator";
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Matches, Max, MaxLength, Min, ValidateBy } from "class-validator";
 import { EtapaProyecto } from "../proyecto.enum";
+import { HorariosSala, horariosValidos } from "../horarioSala";
 
 export class CrearProyectoDto{
     @IsString()
@@ -53,6 +54,13 @@ export class CrearProyectoDto{
     @IsString()
     @MaxLength(150)
     salaHorario?:string | null;
+
+    @IsOptional()
+    @ValidateBy({name:'horariosSala', validator:{
+        validate:horariosValidos,
+        defaultMessage:() => 'salaHorarios debe tener días lun a dom con tramos ["HH:MM","HH:MM"] donde la apertura es antes del cierre',
+    }})
+    salaHorarios?:HorariosSala | null;
 
     @IsOptional()
     @IsString()

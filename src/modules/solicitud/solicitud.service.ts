@@ -19,6 +19,7 @@ import { ActualizarVisitaDto } from "./dto/actualizarVisita.dto";
 import { CrearCotizacionDto } from "./dto/crearCotizacion.dto";
 import { ETIQUETA_ORIGEN, ETIQUETA_VISITA, EstadoVisita, OrigenSolicitud } from "./solicitud.enum";
 import { CorreoService } from "../correo/correo.service";
+import { dentroDeHorario } from "../proyecto/horarioSala";
 
 const fechaHoraChile = (fecha: Date) => fecha.toLocaleString('es-CL', {
     timeZone:'America/Santiago', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hourCycle:'h23',
@@ -75,7 +76,7 @@ export class SolicitudService{
         if(!modeloCasa){
             throw new NotFoundException('El modelo de la casa ingresado no existe');
         }
-        const visitaPreferida = this.validarVisita(crearSolicitudDto.visitaPreferida, modeloCasa);
+        const visitaPreferida = this.validarVisita(crearSolicitudDto.visitaPreferida, modeloCasa, desdePanel);
 
         const solicitud = new Solicitud();
             solicitud.nombre = crearSolicitudDto.nombre;
@@ -124,7 +125,8 @@ export class SolicitudService{
     }
 
     // Solo si el proyecto tiene sala de ventas, y entre ahora y VISITA_DIAS_MAXIMOS días.
-    private validarVisita(visita:string | undefined, modeloCasa:ModeloCasa):Date | null{
+    // Desde el panel no se exige el horario: la secretaria puede acordar con el cliente una hora especial.
+    private validarVisita(visita:string | undefined, modeloCasa:ModeloCasa, desdePanel:boolean):Date | null{
         if(!visita) return null;
         if(!modeloCasa.proyecto?.salaDireccion){
             throw new BadRequestException('El proyecto no tiene sala de ventas para agendar una visita');
@@ -133,6 +135,10 @@ export class SolicitudService{
         const ahora = Date.now();
         if(fecha.getTime() <= ahora || fecha.getTime() > ahora + VISITA_DIAS_MAXIMOS * 24 * 60 * 60 * 1000){
             throw new BadRequestException(`La visita debe ser una fecha futura dentro de los próximos ${VISITA_DIAS_MAXIMOS} días`);
+        }
+        const horarios = modeloCasa.proyecto.salaHorarios;
+        if(!desdePanel && horarios && !dentroDeHorario(fecha, horarios)){
+            throw new BadRequestException(`La sala de ventas no atiende a esa hora${modeloCasa.proyecto.salaHorario ? `. Horario: ${modeloCasa.proyecto.salaHorario}` : ''}`);
         }
         return fecha;
     }
@@ -211,7 +217,7 @@ export class SolicitudService{
         let nota: string | null = null;
         const estadoAnterior = solicitud.visitaEstado;
         if(fecha){
-            const nueva = this.validarVisita(fecha, solicitud.modeloCasa)!;
+            const nueva = this.validarVisita(fecha, solicitud.modeloCasa, true)!;
             const anterior = solicitud.visitaPreferida;
             nota = anterior
                 ? `Visita reagendada: del ${fechaHoraChile(anterior)} al ${fechaHoraChile(nueva)}.`

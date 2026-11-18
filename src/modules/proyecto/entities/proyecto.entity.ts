@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGenerat
 import { Ciudad } from "../../ubicacion/entities/ciudad.entity";
 import { decimalANumero } from "../../../database/transformadores";
 import type { Entorno } from "../entorno.service";
+import type { HorariosSala } from "../horarioSala";
 
 @Entity('proyecto')
 export class Proyecto{
@@ -45,6 +46,10 @@ export class Proyecto{
 
     @Column({name:'sala_horario', type:'varchar', length:150, nullable:true})
     salaHorario: string | null;
+
+    // salaHorario es el texto que se muestra; este es el horario que se usa para agendar visitas.
+    @Column({name:'sala_horarios', type:'jsonb', nullable:true})
+    salaHorarios: HorariosSala | null;
 
     @Column({name:'sala_telefono', type:'varchar', length:20, nullable:true})
     salaTelefono: string | null;

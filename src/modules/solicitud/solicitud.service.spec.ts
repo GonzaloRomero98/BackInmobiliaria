@@ -113,6 +113,21 @@ describe('SolicitudService', () => {
       modeloRepo.findOne.mockResolvedValue({ id: 'm1', proyecto: { salaDireccion: null } });
       await expect(service.crearSolicitud({ ...dto, visitaPreferida: enDias(3) })).rejects.toBeInstanceOf(BadRequestException);
     });
+
+    // Sala con horario cargado pero sin días abiertos: ninguna hora calza.
+    const salaCerrada = { id: 'm1', proyecto: { salaDireccion: '1 Sur 100', salaHorario: 'Cerrado', salaHorarios: {}, salaLatitud: null, salaLongitud: null } };
+
+    it('400 desde la web si la sala no atiende a esa hora', async () => {
+      modeloRepo.findOne.mockResolvedValue(salaCerrada);
+      await expect(service.crearSolicitud({ ...dto, visitaPreferida: enDias(3) })).rejects.toThrow('La sala de ventas no atiende a esa hora. Horario: Cerrado');
+    });
+
+    it('desde el panel se puede agendar fuera de horario', async () => {
+      modeloRepo.findOne.mockResolvedValue(salaCerrada);
+      const { aceptaPrivacidad: _, ...datos } = dto;
+      const s = await service.crearDesdePanel({ ...datos, origen: 'TELEFONO' as never, clienteInformado: true, visitaPreferida: enDias(3) });
+      expect(s.visitaPreferida).not.toBeNull();
+    });
   });
 
   it('404 si el modelo de casa no existe', async () => {

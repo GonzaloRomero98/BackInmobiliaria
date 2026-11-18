@@ -42,6 +42,7 @@ export class ProyectoService{
             fechaEntrega: crearPoroyectoDto.fechaEntrega ?? null,
             salaDireccion: crearPoroyectoDto.salaDireccion ?? null,
             salaHorario: crearPoroyectoDto.salaHorario ?? null,
+            salaHorarios: crearPoroyectoDto.salaHorarios ?? null,
             salaTelefono: crearPoroyectoDto.salaTelefono ?? null,
             salaLatitud: crearPoroyectoDto.salaLatitud ?? null,
             salaLongitud: crearPoroyectoDto.salaLongitud ?? null,

@@ -15,6 +15,7 @@ import { SeguimientoSolicitudes1794000000000 } from "./1794000000000-Seguimiento
 import { RetencionAuditoria1794100000000 } from "./1794100000000-RetencionAuditoria";
 import { SesionesCerradas1794200000000 } from "./1794200000000-SesionesCerradas";
 import { ReservaSinCascada1794300000000 } from "./1794300000000-ReservaSinCascada";
+import { HorariosSala1794400000000 } from "./1794400000000-HorariosSala";
 
 // Las migraciones se registran a mano y en orden. Al generar una nueva hay que agregarla aquí.
 export const migraciones: (new () => MigrationInterface)[] = [
@@ -34,4 +35,5 @@ export const migraciones: (new () => MigrationInterface)[] = [
     RetencionAuditoria1794100000000,
     SesionesCerradas1794200000000,
     ReservaSinCascada1794300000000,
+    HorariosSala1794400000000,
 ];
