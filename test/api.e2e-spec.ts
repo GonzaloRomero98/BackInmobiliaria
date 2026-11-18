@@ -160,11 +160,9 @@ describe('API (e2e, BD simulada)', () => {
   const http = () => request(app.getHttpServer());
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
-  it('GET /api responde', () => http().get('/api').expect(200).expect('Hello World!'));
-
   describe('cabeceras y CORS', () => {
     it('envía cabeceras de seguridad (helmet) y no expone X-Powered-By', async () => {
-      const res = await http().get('/api').expect(200);
+      const res = await http().get('/api/health').expect(200);
       expect(res.headers['x-content-type-options']).toBe('nosniff');
       expect(res.headers['strict-transport-security']).toBeDefined();
       expect(res.headers['content-security-policy']).toBeDefined();
@@ -172,21 +170,21 @@ describe('API (e2e, BD simulada)', () => {
     });
 
     it('permite los orígenes configurados', async () => {
-      const res = await http().get('/api').set('Origin', 'https://inmocap.cl').expect(200);
+      const res = await http().get('/api/health').set('Origin', 'https://inmocap.cl').expect(200);
       expect(res.headers['access-control-allow-origin']).toBe('https://inmocap.cl');
     });
 
     it('no habilita CORS para otros orígenes', async () => {
-      const res = await http().get('/api').set('Origin', 'https://atacante.com');
+      const res = await http().get('/api/health').set('Origin', 'https://atacante.com');
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
     });
   });
 
   describe('límite de peticiones y SSR', () => {
     it('los GET del SSR (con SSR_CLAVE) no gastan el límite por IP; sin la clave, la 101.ª da 429', async () => {
-      for (let i = 0; i < 101; i++) await http().get('/api').set('x-ssr-clave', 'clave-ssr-test').expect(200);
-      for (let i = 0; i < 100; i++) await http().get('/api').set('x-ssr-clave', 'otra-clave-ssr').expect(200);
-      await http().get('/api').expect(429);
+      for (let i = 0; i < 101; i++) await http().get('/api/health').set('x-ssr-clave', 'clave-ssr-test').expect(200);
+      for (let i = 0; i < 100; i++) await http().get('/api/health').set('x-ssr-clave', 'otra-clave-ssr').expect(200);
+      await http().get('/api/health').expect(429);
     });
 
     it('la clave no salta el límite del login', async () => {
