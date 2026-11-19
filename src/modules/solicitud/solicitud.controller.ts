@@ -1,8 +1,7 @@
-import { BadRequestException, Body, Controller, Delete, Get, Header, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { Request } from "express";
 import { Throttle } from "@nestjs/throttler";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { isEmail } from "class-validator";
 import { SolicitudService } from "./solicitud.service";
 import { CrearSolicitudDto } from "./dto/crearSolicitud.dto";
 import { ListarSolicitudesDto } from "./dto/listarSolicitudes.dto";
@@ -15,6 +14,7 @@ import { CrearNotaDto } from "./dto/crearNota.dto";
 import { ActualizarVisitaDto } from "./dto/actualizarVisita.dto";
 import { CrearCotizacionDto } from "./dto/crearCotizacion.dto";
 import { CorregirDatosSolicitudDto } from "./dto/corregirDatosSolicitud.dto";
+import { EliminarPorCorreoDto } from "./dto/eliminarPorCorreo.dto";
 
 type RequestConUsuario = Request & {user:{id:string, correo:string, rol:string}};
 
@@ -120,10 +120,7 @@ export class SolicitudController{
     @ApiBearerAuth()
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
-    eliminarPorCorreo(@Query('correo') correo:string){
-        if(!correo || !isEmail(correo)){
-            throw new BadRequestException('Debe indicar un correo válido');
-        }
+    eliminarPorCorreo(@Query() {correo}:EliminarPorCorreoDto){
         return this.solicitudService.eliminarPorCorreo(correo);
     }
 

@@ -7,9 +7,10 @@ import { ProyectoService } from "./proyecto.service";
 import { EntornoService } from "./entorno.service";
 import { Ciudad } from "../ubicacion/entities/ciudad.entity";
 import { AuthModule } from "../auth/auth.module";
+import { S3Module } from "../s3/s3.module";
 
 @Module({
-    imports:[TypeOrmModule.forFeature([Proyecto, Ciudad, NormativaProyecto]), AuthModule],
+    imports:[TypeOrmModule.forFeature([Proyecto, Ciudad, NormativaProyecto]), AuthModule, S3Module],
     controllers:[PoryectoController],
     providers:[ProyectoService, EntornoService],
     exports:[TypeOrmModule]

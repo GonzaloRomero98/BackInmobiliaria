@@ -27,6 +27,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthService } from '../../src/modules/auth/auth.service';
 import { UsuarioService } from '../../src/modules/usuario/usuario.service';
 import { SesionCerrada } from '../../src/modules/auth/entities/sesionCerrada.entity';
+import { ProyectoService } from '../../src/modules/proyecto/proyecto.service';
 
 const env = process.env;
 let ds: DataSource;
@@ -243,6 +244,35 @@ describe('Borrado de solicitudes sin cascada (PostgreSQL real)', () => {
       expect(reservadas).toBe(await contarReservas(modelo));
       expect(reservadas).toBe(reserva.status === 'fulfilled' ? 1 : 0);
     }
+  });
+});
+
+describe('Eliminar proyecto (PostgreSQL real)', () => {
+  it('una sola consulta nombra los modelos con solicitudes (sin repetir); sin solicitudes borra modelos y proyecto', async () => {
+    const proyectos = ds.getRepository(Proyecto);
+    const servicio = new ProyectoService(proyectos, ds.getRepository(Ciudad), ds.getRepository(NormativaProyecto), {} as never, {} as never);
+    const ciudad = (await ds.getRepository(Ciudad).find({ take: 1 }))[0];
+    const otro = await proyectos.save({ nombre: 'Proyecto a borrar', descripcion: 'x', ciudad });
+    const [libre, conDos, conUna] = await Promise.all(['A', 'B', 'C'].map((letra) => modelos.save(modelos.create({
+      nombreModelo: `Borrar ${letra}`, tipoOperacion: 'VENTA', dormitorios: 2, banos: 1, superficieConstruida: 60,
+      superficieTerreno: 100, precio: 2000, moneda: 'UF', imgPrincipal: 'https://ejemplo/img.png', unidades: 1, proyecto: otro,
+    }))));
+    // Dos solicitudes en el mismo modelo: el nombre sale una sola vez (DISTINCT). La del otro proyecto no cuenta.
+    await crearSolicitud(conDos);
+    await crearSolicitud(conDos);
+    await crearSolicitud(conUna);
+    await crearSolicitud(await crearModelo(1));
+
+    const error = await servicio.eliminarProyecto(otro.id).catch((e: Error) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as Error).message).toContain(`los modelos «${conDos.nombreModelo}», «${conUna.nombreModelo}» tienen solicitudes`);
+    expect((error as Error).message).not.toContain(libre.nombreModelo);
+    expect(await modelos.countBy({ proyecto: { id: otro.id } })).toBe(3);
+
+    await ds.query(`DELETE FROM solicitud WHERE id_modelo_casa IN ($1, $2)`, [conDos.id, conUna.id]);
+    await expect(servicio.eliminarProyecto(otro.id)).resolves.toEqual({ nombre: 'Proyecto a borrar' });
+    expect(await modelos.countBy({ proyecto: { id: otro.id } })).toBe(0);
+    expect(await proyectos.existsBy({ id: otro.id })).toBe(false);
   });
 });
 

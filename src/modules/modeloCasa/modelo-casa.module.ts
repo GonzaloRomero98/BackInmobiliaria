@@ -7,9 +7,10 @@ import { ModeloCasaController } from "./modelo-casa.controller";
 import { ModeloCasaService } from "./modelo-casa.service";
 import { Caracteristica } from "../caracteristicas/entities/caracteristica.entity";
 import { GaleriaModeloCasa } from "./entities/galeriaModeloCasa.entity";
+import { S3Module } from "../s3/s3.module";
 
 @Module({
-    imports:[TypeOrmModule.forFeature([ModeloCasa, Proyecto, Caracteristica, GaleriaModeloCasa]), AuthModule],
+    imports:[TypeOrmModule.forFeature([ModeloCasa, Proyecto, Caracteristica, GaleriaModeloCasa]), AuthModule, S3Module],
     controllers:[ModeloCasaController],
     providers:[ModeloCasaService],
     exports:[TypeOrmModule, ModeloCasaService]

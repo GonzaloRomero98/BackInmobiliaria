@@ -1,6 +1,7 @@
 import { IsBoolean, IsDateString, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Matches, Max, MaxLength, Min, ValidateBy } from "class-validator";
 import { EtapaProyecto } from "../proyecto.enum";
 import { HorariosSala, horariosValidos } from "../horarioSala";
+import { UrlHttps } from "../../s3/s3.archivos";
 
 export class CrearProyectoDto{
     @IsString()
@@ -17,6 +18,7 @@ export class CrearProyectoDto{
     descripcion?:string;
 
     @IsString()
+    @UrlHttps()
     imagenPortada:string;
 
     @IsOptional()

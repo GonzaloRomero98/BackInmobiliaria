@@ -8,6 +8,12 @@ import { Ciudad } from '../ubicacion/entities/ciudad.entity';
 import { NormativaProyecto } from './entities/normativaProyecto.entity';
 import { NormativaDto } from './dto/normativa.dto';
 import { EntornoService } from './entorno.service';
+import { ConfigService } from '@nestjs/config';
+import { S3Service } from '../s3/s3.service';
+
+// S3Service real con un bucket de prueba: la portada nueva tiene que estar en la carpeta "proyectos" de ese bucket.
+const s3 = new S3Service(new ConfigService({ AWS_S3_BUCKET: 'bucket-test', AWS_REGION: 'us-east-1' }));
+const PORTADA = 'https://bucket-test.s3.us-east-1.amazonaws.com/proyectos/0b7c2c64-7a8e-4f0f-9a43-2f1d6f1e9b10.jpg';
 
 const esperarTareas = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -31,13 +37,26 @@ describe('ProyectoService', () => {
       ciudadRepo as unknown as Repository<Ciudad>,
       normativaRepo as unknown as Repository<NormativaProyecto>,
       entornoService as unknown as EntornoService,
+      s3,
     );
+  });
+
+  it('portada nueva fuera de la carpeta "proyectos" del bucket -> 400 sin guardar; la portada guardada se puede reenviar', async () => {
+    ciudadRepo.findOne.mockResolvedValue({ id: 3 });
+    await expect(service.crearProyecto({ nombre: 'P', id_ciudad: 3, imagenPortada: 'https://evil.cl/p.jpg' }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(proyectoRepo.save).not.toHaveBeenCalled();
+
+    const antigua = 'https://bucket-test.s3.us-east-1.amazonaws.com/models/vieja.jpg';
+    proyectoRepo.findOne.mockResolvedValue({ id: 'p1', nombre: 'P', latitud: null, longitud: null, imagenPortada: antigua });
+    await expect(service.actualizarProyecto('p1', { imagenPortada: antigua, nombre: 'Q' })).resolves.toMatchObject({ nombre: 'Q' });
+    await expect(service.actualizarProyecto('p1', { imagenPortada: 'https://evil.cl/p.jpg' })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('crea el proyecto asociado a la ciudad, con ubicación', async () => {
     ciudadRepo.findOne.mockResolvedValue({ id: 3, nombre: 'Temuco' });
     const p = await service.crearProyecto({
-      nombre: 'Proyecto', id_ciudad: 3, descripcion: 'desc', imagenPortada: 'https://x/p.jpg',
+      nombre: 'Proyecto', id_ciudad: 3, descripcion: 'desc', imagenPortada: PORTADA,
       direccion: 'Av. Alemania 100', latitud: -38.7359, longitud: -72.5904,
       etapa: EtapaProyecto.EN_BLANCO, fechaEntrega: '2027-06-30',
     });
@@ -48,14 +67,14 @@ describe('ProyectoService', () => {
 
   it('descripción y ubicación son opcionales', async () => {
     ciudadRepo.findOne.mockResolvedValue({ id: 3 });
-    const p = await service.crearProyecto({ nombre: 'P', id_ciudad: 3, imagenPortada: 'https://x/p.jpg' });
+    const p = await service.crearProyecto({ nombre: 'P', id_ciudad: 3, imagenPortada: PORTADA });
     expect(p).toMatchObject({ descripcion: '', direccion: null, latitud: null, longitud: null, etapa: null, fechaEntrega: null });
   });
 
   it('404 si la ciudad no existe', async () => {
     ciudadRepo.findOne.mockResolvedValue(null);
     await expect(
-      service.crearProyecto({ nombre: 'P', id_ciudad: 99, descripcion: '', imagenPortada: '' }),
+      service.crearProyecto({ nombre: 'P', id_ciudad: 99, descripcion: '', imagenPortada: PORTADA }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -75,7 +94,7 @@ describe('ProyectoService', () => {
   describe('proyectos casi en el mismo punto (< 50 m)', () => {
     // Plaza de Arica. 0,0001° de latitud son unos 11 m y 0,003° unos 334 m.
     const OTRO = { id: 'otro', nombre: 'Los Robles', activo: true, latitud: -18.4783, longitud: -70.3126 };
-    const base = { nombre: 'Nuevo', id_ciudad: 3, imagenPortada: 'x' };
+    const base = { nombre: 'Nuevo', id_ciudad: 3, imagenPortada: PORTADA };
     beforeEach(() => {
       ciudadRepo.findOne.mockResolvedValue({ id: 3 });
       proyectoRepo.find.mockResolvedValue([OTRO]);
@@ -190,7 +209,7 @@ describe('ProyectoService', () => {
     it('al crear con coordenadas se calcula el entorno en segundo plano', async () => {
       ciudadRepo.findOne.mockResolvedValue({ id: 3 });
       proyectoRepo.findOne.mockResolvedValue({ id: 'p1', latitud: -35.4, longitud: -71.6 });
-      await service.crearProyecto({ nombre: 'P', id_ciudad: 3, imagenPortada: 'x', latitud: -35.4, longitud: -71.6 });
+      await service.crearProyecto({ nombre: 'P', id_ciudad: 3, imagenPortada: PORTADA, latitud: -35.4, longitud: -71.6 });
       await esperarTareas();
       expect(entornoService.calcular).toHaveBeenCalledWith(-35.4, -71.6);
       expect(proyectoRepo.update).toHaveBeenCalledWith({ id: 'p1' }, expect.objectContaining({ entorno: expect.any(Object) }));
@@ -198,7 +217,7 @@ describe('ProyectoService', () => {
 
     it('sin coordenadas no se consulta OpenStreetMap', async () => {
       ciudadRepo.findOne.mockResolvedValue({ id: 3 });
-      await service.crearProyecto({ nombre: 'P', id_ciudad: 3, imagenPortada: 'x' });
+      await service.crearProyecto({ nombre: 'P', id_ciudad: 3, imagenPortada: PORTADA });
       await esperarTareas();
       expect(entornoService.calcular).not.toHaveBeenCalled();
     });
@@ -237,12 +256,16 @@ describe('ProyectoService', () => {
     });
   });
   describe('eliminarProyecto', () => {
-    let manager: { findOne: jest.Mock; find: jest.Mock; count: jest.Mock; delete: jest.Mock };
+    // Modelos con solicitudes, como los devuelve la consulta única (SELECT DISTINCT).
+    let qb: Record<'innerJoin' | 'select' | 'where' | 'orderBy' | 'getRawMany', jest.Mock>;
+    let manager: { findOne: jest.Mock; find: jest.Mock; createQueryBuilder: jest.Mock; delete: jest.Mock };
     beforeEach(() => {
+      qb = { innerJoin: jest.fn(), select: jest.fn(), where: jest.fn(), orderBy: jest.fn(), getRawMany: jest.fn(async () => []) };
+      for (const paso of ['innerJoin', 'select', 'where', 'orderBy'] as const) qb[paso].mockReturnValue(qb);
       manager = {
         findOne: jest.fn(async () => ({ id: 'p1', nombre: 'Los Robles' })),
-        find: jest.fn(async () => [{ id: 'm1', nombreModelo: 'Casa A' }, { id: 'm2', nombreModelo: 'Casa B' }]),
-        count: jest.fn(async () => 0), delete: jest.fn(),
+        find: jest.fn(async () => [{ id: 'm1' }, { id: 'm2' }]),
+        createQueryBuilder: jest.fn(() => qb), delete: jest.fn(),
       };
       Object.assign(proyectoRepo, { manager: { transaction: jest.fn((cb: (m: typeof manager) => unknown) => cb(manager)) } });
     });
@@ -261,9 +284,19 @@ describe('ProyectoService', () => {
     });
 
     it('409 nombrando los modelos con solicitudes, sin borrar nada', async () => {
-      manager.count.mockImplementation(async (_entidad, { where }) => (where.modeloCasa.id === 'm2' ? 3 : 0));
+      qb.getRawMany.mockResolvedValue([{ nombre: 'Casa B' }]);
       await expect(service.eliminarProyecto('p1')).rejects.toThrow('el modelo «Casa B» tiene solicitudes de clientes');
       expect(manager.delete).not.toHaveBeenCalled();
+
+      qb.getRawMany.mockResolvedValue([{ nombre: 'Casa A' }, { nombre: 'Casa B' }]);
+      await expect(service.eliminarProyecto('p1')).rejects.toThrow('los modelos «Casa A», «Casa B» tienen solicitudes de clientes');
+    });
+
+    it('revisa las solicitudes de todos los modelos en una sola consulta, no una por modelo', async () => {
+      await service.eliminarProyecto('p1');
+      expect(manager.createQueryBuilder).toHaveBeenCalledTimes(1);
+      expect(qb.select).toHaveBeenCalledWith('DISTINCT m.nombreModelo', 'nombre');
+      expect(qb.where).toHaveBeenCalledWith('m.proyecto = :id', { id: 'p1' });
     });
 
     it('404 si no existe', async () => {

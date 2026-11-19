@@ -1,5 +1,5 @@
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { ModeloCasaService } from "./modelo-casa.service";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
@@ -12,6 +12,7 @@ import { AgregarFotoDto } from "./dto/agregarFoto.dto";
 import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { DuplicarModeloCasaDto } from "./dto/duplicarModeloCasa.dto";
 import { OrdenarFotosDto } from "./dto/ordenarFotos.dto";
+import { NombreDisponibleDto } from "./dto/nombreDisponible.dto";
 
 @ApiTags('modelos de casa')
 @ApiBearerAuth()
@@ -42,15 +43,8 @@ export class ModeloCasaController{
     @Get('admin/nombre-disponible')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
-    nombreDisponible(
-        @Query('nombre') nombre:string,
-        @Query('excluirId', new ParseUUIDPipe({optional:true})) excluirId?:string,
-    ){
-        const limpio = typeof nombre === 'string' ? nombre.trim() : '';
-        if(!limpio || limpio.length > 150){
-            throw new BadRequestException('Debe indicar un nombre de 1 a 150 caracteres');
-        }
-        return this.modeloCasaService.nombreDisponible(limpio, excluirId);
+    nombreDisponible(@Query() {nombre, excluirId}:NombreDisponibleDto){
+        return this.modeloCasaService.nombreDisponible(nombre, excluirId);
     }
 
     @Get('admin/:id')

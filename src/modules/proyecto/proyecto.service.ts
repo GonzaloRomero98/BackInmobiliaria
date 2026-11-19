@@ -10,6 +10,7 @@ import { ActualizarProyectoDto } from "./dto/actualizarProyecto.dto";
 import { NormativaProyecto } from "./entities/normativaProyecto.entity";
 import { NormativaDto } from "./dto/normativa.dto";
 import { distanciaMetros, Entorno, EntornoService } from "./entorno.service";
+import { S3Service } from "../s3/s3.service";
 
 // A menos de 50 m casi siempre es un duplicado o un clic equivocado en el mapa.
 export const DISTANCIA_DUPLICADO_M = 50;
@@ -25,10 +26,12 @@ export class ProyectoService{
         private readonly ciudadRepository:Repository<Ciudad>,
         @InjectRepository(NormativaProyecto)
         private readonly normativaRepository:Repository<NormativaProyecto>,
-        private readonly entornoService: EntornoService
+        private readonly entornoService: EntornoService,
+        private readonly s3Service: S3Service
     ){}
 
     async crearProyecto(crearPoroyectoDto: CrearProyectoDto): Promise<Proyecto>{
+        this.s3Service.exigirArchivo(crearPoroyectoDto.imagenPortada, 'proyectos');
         const ciudad = await this.buscarCiudad(crearPoroyectoDto.id_ciudad);
         await this.exigirConfirmacionSiDuplicado(crearPoroyectoDto.latitud, crearPoroyectoDto.longitud, crearPoroyectoDto.confirmarCercania);
         const proyecto = this.proyectoRepository.create({
@@ -56,6 +59,7 @@ export class ProyectoService{
     async actualizarProyecto(id:string, actualizarProyectoDto: ActualizarProyectoDto): Promise<Proyecto>{
         const proyecto = await this.obtenerProyectoPorID(id);
         const {id_ciudad, confirmarCercania, ...cambios} = actualizarProyectoDto;
+        this.s3Service.exigirArchivo(cambios.imagenPortada, 'proyectos', proyecto.imagenPortada);
         if(id_ciudad !== undefined){
             proyecto.ciudad = await this.buscarCiudad(id_ciudad);
         }
@@ -153,15 +157,18 @@ export class ProyectoService{
             if(!proyecto){
                 throw new NotFoundException('El proyecto no fue encontrado');
             }
-            const modelos = await manager.find(ModeloCasa, {where:{proyecto:{id}}, select:{id:true, nombreModelo:true}, loadEagerRelations:false});
-            const conSolicitudes: string[] = [];
-            for(const modelo of modelos){
-                if(await manager.count(Solicitud, {where:{modeloCasa:{id:modelo.id}}}) > 0) conSolicitudes.push(`«${modelo.nombreModelo}»`);
-            }
+            // Una sola consulta: los modelos del proyecto que tienen al menos una solicitud.
+            const conSolicitudes = (await manager.createQueryBuilder(ModeloCasa, 'm')
+                .innerJoin(Solicitud, 's', 's.modeloCasa = m.id')
+                .select('DISTINCT m.nombreModelo', 'nombre')
+                .where('m.proyecto = :id', {id})
+                .orderBy('nombre')
+                .getRawMany<{nombre:string}>()).map(({nombre}) => `«${nombre}»`);
             if(conSolicitudes.length > 0){
                 const varios = conSolicitudes.length > 1;
                 throw new ConflictException(`No se puede eliminar «${proyecto.nombre}»: ${varios ? 'los modelos' : 'el modelo'} ${conSolicitudes.join(', ')} ${varios ? 'tienen' : 'tiene'} solicitudes de clientes. Despublica el proyecto para sacarlo del catálogo.`);
             }
+            const modelos = await manager.find(ModeloCasa, {where:{proyecto:{id}}, select:{id:true}, loadEagerRelations:false});
             if(modelos.length > 0){
                 await manager.delete(ModeloCasa, {id:In(modelos.map((m) => m.id))});
             }

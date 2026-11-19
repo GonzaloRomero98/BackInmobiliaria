@@ -1,4 +1,10 @@
+import { IsUrl } from "class-validator";
+
 const MB = 1024 * 1024;
+
+// Para los DTOs con URLs de archivos: solo https (nada de javascript:, data: ni http:).
+// Que además sea de este bucket y de su carpeta lo revisa S3Service.exigirArchivo en el servicio.
+export const UrlHttps = () => IsUrl({protocols:['https'], require_protocol:true}, {message:'$property debe ser una URL https'});
 
 const IMAGENES: Record<string, string> = {
     'image/jpeg': 'jpg',

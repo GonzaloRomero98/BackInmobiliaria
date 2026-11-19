@@ -63,6 +63,16 @@ export class S3Service {
         return new RegExp(`^${carpeta}/[0-9a-f-]{36}\\.[a-z0-9]+$`).test(key) ? key : null;
     }
 
+    // Para modelos y proyectos: una URL nueva tiene que ser un archivo subido con /s3/presigned-url a esa carpeta.
+    // Una URL igual a la que ya estaba guardada se acepta, porque el formulario la reenvía al editar
+    // y los archivos subidos antes de las carpetas fijas (26-10-2026) tienen otro formato de key.
+    exigirArchivo(url:string | null | undefined, carpeta:CarpetaS3, guardada?:string | null):void{
+        if(url == null || url === guardada) return;
+        if(!this.keyDeUrl(url, carpeta)){
+            throw new BadRequestException(`El archivo debe subirse desde el formulario (carpeta ${carpeta})`);
+        }
+    }
+
     private urlBase():string{
         return `https://${this.awsBucketname}.s3.${this.awsRegion}.amazonaws.com/`;
     }

@@ -1,5 +1,6 @@
 import { ArrayUnique, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
 import { Moneda, SUBSIDIOS, TipoOperacion, TipoVivienda } from "../modelo-casa.enum";
+import { UrlHttps } from "../../s3/s3.archivos";
 
 export class CrearModeloCasaDto{
     @IsUUID()
@@ -56,10 +57,12 @@ export class CrearModeloCasaDto{
 
     @IsOptional()
     @IsString()
+    @UrlHttps()
     modelo3dUrl?:string | null;
 
     @IsOptional()
     @IsString()
+    @UrlHttps()
     planoUrl?:string | null;
 
     @IsOptional()
@@ -74,6 +77,7 @@ export class CrearModeloCasaDto{
     bono?:string | null;
 
     @IsString()
+    @UrlHttps()
     imgPrincipal:string;
 
     @IsArray()

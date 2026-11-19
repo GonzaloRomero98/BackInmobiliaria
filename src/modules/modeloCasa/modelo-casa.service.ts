@@ -11,6 +11,7 @@ import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { FiltrosModeloCasaDto, OrdenModelo } from "./dto/filtrosModeloCasa.dto";
 import { calcularEstado, EstadoModelo, TipoVivienda } from "./modelo-casa.enum";
 import { Solicitud } from "../solicitud/entities/solicitud.entity";
+import { S3Service } from "../s3/s3.service";
 
 const ORDEN: Record<OrdenModelo, FindOptionsOrder<ModeloCasa>> = {
     precio_asc: {precio:'ASC'},
@@ -36,10 +37,12 @@ export class ModeloCasaService{
         @InjectRepository(Caracteristica)
         private readonly caracteristicaRepository: Repository<Caracteristica>,
         @InjectRepository(GaleriaModeloCasa)
-        private readonly galeriaRepository: Repository<GaleriaModeloCasa>
+        private readonly galeriaRepository: Repository<GaleriaModeloCasa>,
+        private readonly s3Service: S3Service
     ){}
 
     async crearModeloCasa(crearModeloCasaDto:CrearModeloCasaDto):Promise<ModeloCasa>{
+        this.exigirArchivos(crearModeloCasaDto);
         const proyecto = await this.proyectoRepository.findOne({where:{id:crearModeloCasaDto.id_proyecto}});
         if(!proyecto){
             throw new NotFoundException('No se encuentra el proyecto');
@@ -81,6 +84,7 @@ export class ModeloCasaService{
     async actualizarModeloCasa(id:string, actualizarModeloCasaDto:ActualizarModeloCasaDto):Promise<ModeloCasa>{
         const modelo = await this.obtenerModeloAdmin(id);
         const {id_proyecto, estacionamiento, caracteristicasID, ...cambios} = actualizarModeloCasaDto;
+        this.exigirArchivos(cambios, modelo);
 
         if(id_proyecto !== undefined){
             const proyecto = await this.proyectoRepository.findOne({where:{id:id_proyecto}});
@@ -118,6 +122,14 @@ export class ModeloCasaService{
             modelo.estado = calcularEstado(modelo.unidades, modelo.unidadesReservadas, modelo.unidadesVendidas);
             return manager.save(ModeloCasa, modelo);
         });
+    }
+
+    // La imagen principal y el plano van a modelosImagenes, y el 3D a modelos3D (las carpetas que usa el formulario).
+    // Al editar se pasa el modelo guardado, para aceptar las URLs que no cambiaron.
+    private exigirArchivos(datos:{imgPrincipal?:string, planoUrl?:string | null, modelo3dUrl?:string | null}, guardado?:ModeloCasa){
+        this.s3Service.exigirArchivo(datos.imgPrincipal, 'modelosImagenes', guardado?.imgPrincipal);
+        this.s3Service.exigirArchivo(datos.planoUrl, 'modelosImagenes', guardado?.planoUrl);
+        this.s3Service.exigirArchivo(datos.modelo3dUrl, 'modelos3D', guardado?.modelo3dUrl);
     }
 
     private exigirTerrenoEnCasas(modelo:ModeloCasa){
@@ -227,6 +239,7 @@ export class ModeloCasaService{
     }
 
     async agregarFoto(id:string, agregarFotoDto: AgregarFotoDto){
+        this.s3Service.exigirArchivo(agregarFotoDto.urlImagen, 'modelosImagenes');
         const modelo = await this.modeloCasaRepository.findOne({where:{id}});
         if(!modelo){
             throw new NotFoundException('Modelo de la casa no encontrado');

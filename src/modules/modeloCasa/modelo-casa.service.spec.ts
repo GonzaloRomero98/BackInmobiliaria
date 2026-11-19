@@ -7,6 +7,16 @@ import { Caracteristica } from '../caracteristicas/entities/caracteristica.entit
 import { GaleriaModeloCasa } from './entities/galeriaModeloCasa.entity';
 import { CrearModeloCasaDto } from './dto/CrearModeloCasa.dto';
 import { EstadoModelo, Moneda, TipoOperacion, TipoVivienda } from './modelo-casa.enum';
+import { ConfigService } from '@nestjs/config';
+import { S3Service } from '../s3/s3.service';
+
+// S3Service real con un bucket de prueba: las URLs nuevas tienen que ser de ese bucket y de su carpeta.
+const s3 = new S3Service(new ConfigService({ AWS_S3_BUCKET: 'bucket-test', AWS_REGION: 'us-east-1' }));
+const BUCKET = 'https://bucket-test.s3.us-east-1.amazonaws.com/';
+const IMG = `${BUCKET}modelosImagenes/0b7c2c64-7a8e-4f0f-9a43-2f1d6f1e9b10.jpg`;
+const PLANO = `${BUCKET}modelosImagenes/1c8d3d75-8b9f-4a1a-8b54-3a2e7a2fac21.png`;
+const FOTO = `${BUCKET}modelosImagenes/2d9e4e86-9ca0-4b2b-9c65-4b3f8b3abd32.webp`;
+const M3D = `${BUCKET}modelos3D/3eaf5f97-adb1-4c3c-8d76-5c4a9c4bce43.glb`;
 
 const mockRepo = () => ({
   findOne: jest.fn(),
@@ -37,8 +47,8 @@ describe('ModeloCasaService', () => {
     superficieTerreno: 200,
     precio: 3500,
     moneda: Moneda.UF,
-    modelo3dUrl: 'https://x/m.glb',
-    imgPrincipal: 'https://x/i.jpg',
+    modelo3dUrl: M3D,
+    imgPrincipal: IMG,
     caracteristicasID: [],
   });
 
@@ -59,7 +69,37 @@ describe('ModeloCasaService', () => {
       proyectoRepo as unknown as Repository<Proyecto>,
       caracRepo as unknown as Repository<Caracteristica>,
       galeriaRepo as unknown as Repository<GaleriaModeloCasa>,
+      s3,
     );
+  });
+
+  describe('archivos (URLs de S3)', () => {
+    it.each([
+      ['imagen de otro dominio', { imgPrincipal: 'https://evil.cl/a.jpg' }],
+      ['plano en la carpeta de perfiles', { planoUrl: `${BUCKET}perfiles/0b7c2c64-7a8e-4f0f-9a43-2f1d6f1e9b10.png` }],
+      ['3D en la carpeta de imágenes', { modelo3dUrl: IMG }],
+    ])('crear con %s -> 400 y no guarda', async (_caso, cambio) => {
+      proyectoRepo.findOne.mockResolvedValue({ id: 'p1' });
+      await expect(service.crearModeloCasa({ ...dto(), ...cambio })).rejects.toBeInstanceOf(BadRequestException);
+      expect(modeloRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('editar reenviando las URLs guardadas con formato antiguo se acepta; una URL nueva externa no', async () => {
+      const antigua = `${BUCKET}models/0b7c2c64-7a8e-4f0f-9a43-2f1d6f1e9b10.jpg`;
+      const existente = { id: 'm1', nombreModelo: 'Casa A', tipoVivienda: 'CASA', superficieTerreno: 200, caracteristicas: [],
+        imgPrincipal: antigua, planoUrl: antigua, modelo3dUrl: null };
+      modeloRepo.findOne.mockResolvedValue(existente);
+      await expect(service.actualizarModeloCasa('m1', { imgPrincipal: antigua, planoUrl: antigua, modelo3dUrl: null, precio: 4000 }))
+        .resolves.toMatchObject({ precio: 4000 });
+
+      modeloRepo.findOne.mockResolvedValue(existente);
+      await expect(service.actualizarModeloCasa('m1', { imgPrincipal: 'https://evil.cl/a.jpg' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('agregar foto de otro dominio -> 400 sin consultar la BD', async () => {
+      await expect(service.agregarFoto('m1', { urlImagen: 'https://evil.cl/a.jpg' })).rejects.toBeInstanceOf(BadRequestException);
+      expect(modeloRepo.findOne).not.toHaveBeenCalled();
+    });
   });
 
   describe('crearModeloCasa', () => {
@@ -141,8 +181,8 @@ describe('ModeloCasaService', () => {
     });
 
     it('guarda plano, subsidios y bono (bono vacío o con espacios -> null)', async () => {
-      const creado = await service.crearModeloCasa({ ...dto(), planoUrl: 'https://x/plano.png', subsidios: ['DS19'], bono: '  Bono pie 10%  ' });
-      expect(creado).toMatchObject({ planoUrl: 'https://x/plano.png', subsidios: ['DS19'], bono: 'Bono pie 10%' });
+      const creado = await service.crearModeloCasa({ ...dto(), planoUrl: PLANO, subsidios: ['DS19'], bono: '  Bono pie 10%  ' });
+      expect(creado).toMatchObject({ planoUrl: PLANO, subsidios: ['DS19'], bono: 'Bono pie 10%' });
       expect((await service.crearModeloCasa({ ...dto(), bono: '   ' })).bono).toBeNull();
     });
 
@@ -221,7 +261,7 @@ describe('ModeloCasaService', () => {
     });
 
     it('modelo3dUrl null quita el 3D', async () => {
-      modeloRepo.findOne.mockResolvedValue({ ...existente(), modelo3dUrl: 'https://x/m.glb' });
+      modeloRepo.findOne.mockResolvedValue({ ...existente(), modelo3dUrl: M3D });
       const r = await service.actualizarModeloCasa('m1', { modelo3dUrl: null });
       expect(r.modelo3dUrl).toBeNull();
     });
@@ -284,7 +324,7 @@ describe('ModeloCasaService', () => {
     const original = () => ({
       id: 'm1', creadoEn: new Date(), nombreModelo: 'Casa A', precio: 3500, activo: true, estado: EstadoModelo.VENDIDO,
       unidades: 5, unidadesReservadas: 2, unidadesVendidas: 3,
-      proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: 'https://x/i.jpg',
+      proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: IMG,
       fotos: [{ id: 'f1', urlImagen: 'https://x/1.jpg', orden: 0 }, { id: 'f2', urlImagen: 'https://x/2.jpg', orden: 1 }],
     });
 
@@ -301,7 +341,7 @@ describe('ModeloCasaService', () => {
       expect(guardado).toMatchObject({
         nombreModelo: 'Casa B', precio: 3500, activo: false, estado: EstadoModelo.DISPONIBLE,
         unidades: 5, unidadesReservadas: 0, unidadesVendidas: 0,
-        proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: 'https://x/i.jpg',
+        proyecto: { id: 'p1' }, caracteristicas: [{ id: 7 }], imgPrincipal: IMG,
       });
       expect(guardado.id).toBeUndefined();
       expect(guardado.creadoEn).toBeUndefined();
@@ -432,8 +472,8 @@ describe('ModeloCasaService', () => {
       galeriaRepo.findOne.mockResolvedValue(null);
       galeriaRepo.count.mockResolvedValue(3);
 
-      const foto = await service.agregarFoto('m1', { urlImagen: 'https://x/f.jpg' });
-      expect(foto).toEqual({ id: 'nuevo-id', urlImagen: 'https://x/f.jpg', orden: 3 });
+      const foto = await service.agregarFoto('m1', { urlImagen: FOTO });
+      expect(foto).toEqual({ id: 'nuevo-id', urlImagen: FOTO, orden: 3 });
     });
 
     it('agregarFoto respeta orden 0 explícito', async () => {
@@ -441,7 +481,7 @@ describe('ModeloCasaService', () => {
       galeriaRepo.findOne.mockResolvedValue(null);
       galeriaRepo.count.mockResolvedValue(5);
 
-      const foto = await service.agregarFoto('m1', { urlImagen: 'https://x/f.jpg', orden: 0 });
+      const foto = await service.agregarFoto('m1', { urlImagen: FOTO, orden: 0 });
       expect(foto.orden).toBe(0);
     });
 
@@ -449,14 +489,14 @@ describe('ModeloCasaService', () => {
       modeloRepo.findOne.mockResolvedValue({ id: 'm1' });
       galeriaRepo.findOne.mockResolvedValue({ id: 'f1' });
       await expect(
-        service.agregarFoto('m1', { urlImagen: 'https://x/f.jpg' }),
+        service.agregarFoto('m1', { urlImagen: FOTO }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('agregarFoto 404 si el modelo no existe', async () => {
       modeloRepo.findOne.mockResolvedValue(null);
       await expect(
-        service.agregarFoto('m1', { urlImagen: 'https://x/f.jpg' }),
+        service.agregarFoto('m1', { urlImagen: FOTO }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 

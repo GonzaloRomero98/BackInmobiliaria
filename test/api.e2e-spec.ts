@@ -43,6 +43,12 @@ type MockRepo = Record<
 >;
 
 const UUID = '11111111-1111-4111-8111-111111111111';
+// Archivos subidos al bucket del test (AWS_S3_BUCKET/AWS_REGION de más abajo), cada uno en su carpeta.
+const BUCKET = 'https://bucket-test.s3.us-east-1.amazonaws.com/';
+const PORTADA = `${BUCKET}proyectos/0b7c2c64-7a8e-4f0f-9a43-2f1d6f1e9b10.jpg`;
+const IMG = `${BUCKET}modelosImagenes/0b7c2c64-7a8e-4f0f-9a43-2f1d6f1e9b10.jpg`;
+const PLANO = `${BUCKET}modelosImagenes/1c8d3d75-8b9f-4a1a-8b54-3a2e7a2fac21.png`;
+const M3D = `${BUCKET}modelos3D/3eaf5f97-adb1-4c3c-8d76-5c4a9c4bce43.glb`;
 const repos = new Map<unknown, MockRepo>();
 const queryBuilder = { delete: jest.fn(), from: jest.fn(), where: jest.fn(), execute: jest.fn() };
 queryBuilder.delete.mockReturnValue(queryBuilder);
@@ -300,7 +306,7 @@ describe('API (e2e, BD simulada)', () => {
       await http()
         .post('/api/proyectos')
         .set('Cookie', cookie)
-        .send({ nombre: 'P', id_ciudad: 1, descripcion: 'd', imagenPortada: 'https://x/p.jpg' })
+        .send({ nombre: 'P', id_ciudad: 1, descripcion: 'd', imagenPortada: PORTADA })
         .expect(201);
     });
 
@@ -421,13 +427,13 @@ describe('API (e2e, BD simulada)', () => {
     it('crear proyecto sin descripción ahora es válido', async () => {
       repo(Ciudad).findOne.mockResolvedValue({ id: 1 });
       await http().post('/api/proyectos').set(auth(adminToken))
-        .send({ nombre: 'P', id_ciudad: 1, imagenPortada: 'https://x/p.jpg' }).expect(201);
+        .send({ nombre: 'P', id_ciudad: 1, imagenPortada: PORTADA }).expect(201);
     });
 
     it('crear a menos de 50 m de otro proyecto: 409 con los cercanos; con confirmarCercania -> 201; confirmarCercania no booleano -> 400', async () => {
       repo(Ciudad).findOne.mockResolvedValue({ id: 1 });
       repo(Proyecto).find.mockResolvedValue([{ id: 'otro', nombre: 'Los Robles', activo: true, latitud: -35.4264, longitud: -71.6554 }]);
-      const cuerpo = { nombre: 'P', id_ciudad: 1, imagenPortada: 'https://x/p.jpg', latitud: -35.4265, longitud: -71.6554 };
+      const cuerpo = { nombre: 'P', id_ciudad: 1, imagenPortada: PORTADA, latitud: -35.4265, longitud: -71.6554 };
       const res = await http().post('/api/proyectos').set(auth(adminToken)).send(cuerpo).expect(409);
       expect(res.body).toMatchObject({ statusCode: 409, cercanos: [{ id: 'otro', nombre: 'Los Robles', distancia: 11 }] });
       expect(res.body.message).toContain('«Los Robles»');
@@ -577,8 +583,8 @@ describe('API (e2e, BD simulada)', () => {
       superficieTerreno: 200,
       precio: 3500,
       moneda: 'UF',
-      modelo3dUrl: 'https://x/m.glb',
-      imgPrincipal: 'https://x/i.jpg',
+      modelo3dUrl: M3D,
+      imgPrincipal: IMG,
       caracteristicasID: [],
     };
 
@@ -601,7 +607,7 @@ describe('API (e2e, BD simulada)', () => {
       repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
       const { superficieTerreno: _t, ...sinTerreno } = body;
       await http().post('/api/modeloCasa').set(auth(adminToken))
-        .send({ ...sinTerreno, tipoVivienda: 'DEPARTAMENTO', gastosComunes: 85000, subsidios: ['DS1', 'DS19'], bono: 'Bono pie 10%', planoUrl: 'https://x/plano.png' })
+        .send({ ...sinTerreno, tipoVivienda: 'DEPARTAMENTO', gastosComunes: 85000, subsidios: ['DS1', 'DS19'], bono: 'Bono pie 10%', planoUrl: PLANO })
         .expect(201);
       expect(repo(ModeloCasa).save.mock.calls[0][0]).toMatchObject({ tipoVivienda: 'DEPARTAMENTO', superficieTerreno: null, gastosComunes: 85000, subsidios: ['DS1', 'DS19'] });
       await http().post('/api/modeloCasa').set(auth(adminToken)).send(sinTerreno).expect(400);
@@ -624,6 +630,29 @@ describe('API (e2e, BD simulada)', () => {
       repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
       repo(ModeloCasa).findOne.mockResolvedValue({ id: 'otro' });
       await http().post('/api/modeloCasa').set(auth(adminToken)).send(body).expect(409);
+    });
+
+    it.each([
+      ['javascript: (lo frena el DTO)', { imgPrincipal: 'javascript:alert(1)' }, 'imgPrincipal debe ser una URL https'],
+      ['http (lo frena el DTO)', { planoUrl: PLANO.replace('https:', 'http:') }, 'planoUrl debe ser una URL https'],
+      ['https de otro dominio (lo frena el servicio)', { imgPrincipal: 'https://evil.cl/a.jpg' }, 'El archivo debe subirse desde el formulario'],
+    ])('crear con una URL de archivo %s -> 400 y no guarda', async (_caso, cambio, mensaje) => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
+      const res = await http().post('/api/modeloCasa').set(auth(adminToken)).send({ ...body, ...cambio }).expect(400);
+      expect(JSON.stringify(res.body.message)).toContain(mensaje);
+      expect(repo(ModeloCasa).save).not.toHaveBeenCalled();
+    });
+
+    it('agregar foto: solo https y del bucket, si no -> 400', async () => {
+      await http().post(`/api/modeloCasa/${UUID}/fotos`).set(auth(adminToken)).send({ urlImagen: 'data:image/png;base64,AAAA' }).expect(400);
+      await http().post(`/api/modeloCasa/${UUID}/fotos`).set(auth(adminToken)).send({ urlImagen: 'https://evil.cl/a.jpg' }).expect(400);
+      expect(repo(GaleriaModeloCasa).save).not.toHaveBeenCalled();
+    });
+
+    it('proyecto con portada de otro dominio -> 400', async () => {
+      repo(Ciudad).findOne.mockResolvedValue({ id: 1 });
+      await http().post('/api/proyectos').set(auth(adminToken)).send({ nombre: 'P', id_ciudad: 1, imagenPortada: 'https://evil.cl/p.jpg' }).expect(400);
+      expect(repo(Proyecto).save).not.toHaveBeenCalled();
     });
 
     it('dos altas simultáneas con el mismo nombre: la BD rechaza la segunda (23505) -> 409, no 500', async () => {
@@ -1078,8 +1107,19 @@ describe('API (e2e, BD simulada)', () => {
         expect(res.body).toEqual({ eliminadas: 3 });
       });
 
-      it('DELETE sin correo válido -> 400', () =>
-        http().delete('/api/solicitudes?correo=x').set(auth(adminToken)).expect(400));
+      it('DELETE sin correo válido -> 400 con el mismo mensaje; no borra nada', async () => {
+        for (const consulta of ['?correo=x', '', '?correo=a@b.cl&correo=c@d.cl']) {
+          const res = await http().delete(`/api/solicitudes${consulta}`).set(auth(adminToken)).expect(400);
+          expect(res.body.message).toEqual(['Debe indicar un correo válido']);
+        }
+        expect(repo(Solicitud).delete).not.toHaveBeenCalled();
+      });
+
+      it('DELETE recorta los espacios del correo antes de borrar', async () => {
+        repo(Solicitud).find.mockResolvedValue([{ id: UUID }]);
+        await http().delete('/api/solicitudes?correo=%20j@p.cl%20').set(auth(adminToken)).expect(200);
+        expect(repo(Solicitud).find.mock.calls[0][0].where.correo.objectLiteralParameters).toEqual({ correo: 'j@p.cl' });
+      });
 
       it('con reserva activa o venta (la BD rechaza el borrado) -> 409 con el motivo, por id y por correo', async () => {
         repo(Solicitud).find.mockResolvedValue([{ id: UUID }]);

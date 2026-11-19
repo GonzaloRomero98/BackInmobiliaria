@@ -28,6 +28,32 @@ describe('S3Service', () => {
     expect(res.key).toMatch(/\.glb$/);
   });
 
+  describe('exigirArchivo', () => {
+    const BASE = 'https://bucket-test.s3.us-east-1.amazonaws.com/';
+    const UUID = '0b7c2c64-7a8e-4f0f-9a43-2f1d6f1e9b10';
+
+    it('acepta un archivo de esa carpeta del bucket, y null o undefined (campo vacío)', () => {
+      expect(() => service.exigirArchivo(`${BASE}modelosImagenes/${UUID}.jpg`, 'modelosImagenes')).not.toThrow();
+      expect(() => service.exigirArchivo(null, 'modelosImagenes')).not.toThrow();
+      expect(() => service.exigirArchivo(undefined, 'modelos3D')).not.toThrow();
+    });
+
+    it.each([
+      ['otro dominio', `https://evil.cl/modelosImagenes/${UUID}.jpg`],
+      ['javascript:', 'javascript:alert(1)'],
+      ['otra carpeta', `${BASE}perfiles/${UUID}.jpg`],
+      ['key antigua', `${BASE}models/${UUID}.jpg`],
+      ['http en vez de https', `http://bucket-test.s3.us-east-1.amazonaws.com/modelosImagenes/${UUID}.jpg`],
+    ])('rechaza una URL nueva: %s', (_caso, url) => {
+      expect(() => service.exigirArchivo(url, 'modelosImagenes')).toThrow(BadRequestException);
+    });
+
+    it('acepta la URL que ya estaba guardada aunque tenga el formato antiguo (el formulario la reenvía al editar)', () => {
+      const antigua = `${BASE}models/${UUID}.jpg`;
+      expect(() => service.exigirArchivo(antigua, 'modelosImagenes', antigua)).not.toThrow();
+    });
+  });
+
   it('dos llamadas generan keys distintas', async () => {
     const a = await service.obtenerUrl('image/png', 10, 'modelosImagenes');
     const b = await service.obtenerUrl('image/png', 10, 'modelosImagenes');
