@@ -1,10 +1,12 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, JoinTable, ManyToMany, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, Index, JoinColumn, JoinTable, ManyToMany, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
 import { Proyecto } from "../../proyecto/entities/proyecto.entity";
 import { Caracteristica } from "../../caracteristicas/entities/caracteristica.entity";
 import { GaleriaModeloCasa } from "./galeriaModeloCasa.entity";
 import { decimalANumero } from "../../../database/transformadores";
 import { EstadoModelo, TipoVivienda } from "../modelo-casa.enum";
 
+// UNIQUE (LOWER(nombre_modelo)), creado en la migración NombresUnicos. TypeORM no maneja índices sobre expresiones.
+@Index('UQ_modelo_casa_nombre_lower', {synchronize:false})
 @Entity('modelo_casa')
 export class ModeloCasa{
     @PrimaryGeneratedColumn('uuid')

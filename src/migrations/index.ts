@@ -16,6 +16,7 @@ import { RetencionAuditoria1794100000000 } from "./1794100000000-RetencionAudito
 import { SesionesCerradas1794200000000 } from "./1794200000000-SesionesCerradas";
 import { ReservaSinCascada1794300000000 } from "./1794300000000-ReservaSinCascada";
 import { HorariosSala1794400000000 } from "./1794400000000-HorariosSala";
+import { NombresUnicos1794500000000 } from "./1794500000000-NombresUnicos";
 
 // Las migraciones se registran a mano y en orden. Al generar una nueva hay que agregarla aquí.
 export const migraciones: (new () => MigrationInterface)[] = [
@@ -36,4 +37,5 @@ export const migraciones: (new () => MigrationInterface)[] = [
     SesionesCerradas1794200000000,
     ReservaSinCascada1794300000000,
     HorariosSala1794400000000,
+    NombresUnicos1794500000000,
 ];

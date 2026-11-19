@@ -28,10 +28,7 @@ export class UsuarioService{
 
 
     async crearUsuario(usuarioDto: CrearUsuarioDto):Promise<Usuario>{
-        const existe = await this.usarioRepositorio.findOne({
-            where:{ correo:Raw((columna) => `LOWER(${columna}) = LOWER(:correo)`, {correo:usuarioDto.correo})},
-        });
-        if(existe){
+        if(await this.usuarioPorCorreo(usuarioDto.correo)){
             throw new ConflictException('Ya existe un  usuario para este correo');
         }
 
@@ -126,7 +123,8 @@ export class UsuarioService{
         return this.usarioRepositorio.findOne({where: {id}});
     }
 
+    // Sin distinguir mayúsculas, igual que el índice único UQ_usuario_correo_lower. Lo usan el login y crearUsuario.
     async usuarioPorCorreo(correo:string):Promise<Usuario|null>{
-        return this.usarioRepositorio.findOne({where:{correo}});
+        return this.usarioRepositorio.findOne({where:{correo:Raw((columna) => `LOWER(${columna}) = LOWER(:correo)`, {correo})}});
     }
 }

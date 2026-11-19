@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ModeloCasa } from "./entities/modeloCasa.entity";
-import { Between, FindOptionsOrder, FindOptionsWhere, In, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm";
+import { Between, FindOptionsOrder, FindOptionsWhere, In, LessThanOrEqual, MoreThanOrEqual, Raw, Repository } from "typeorm";
 import { Proyecto } from "../proyecto/entities/proyecto.entity";
 import { CrearModeloCasaDto } from "./dto/CrearModeloCasa.dto";
 import { Caracteristica } from "../caracteristicas/entities/caracteristica.entity";
@@ -70,9 +70,7 @@ export class ModeloCasaService{
             modeloCasa.activo = crearModeloCasaDto.activo ?? true;
         this.exigirTerrenoEnCasas(modeloCasa);
 
-        const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:modeloCasa.nombreModelo}});
-
-        if(existeCasa){
+        if(await this.buscarPorNombre(modeloCasa.nombreModelo)){
             throw new ConflictException("Ya se ha ingresado esta propiedad")
         }
 
@@ -95,8 +93,9 @@ export class ModeloCasaService{
         if(caracteristicasID !== undefined) modelo.caracteristicas = await this.buscarCaracteristicas(caracteristicasID);
 
         if(cambios.nombreModelo !== undefined && cambios.nombreModelo !== modelo.nombreModelo){
-            const existeCasa = await this.modeloCasaRepository.findOne({where:{nombreModelo:cambios.nombreModelo}});
-            if(existeCasa){
+            // Si solo cambian mayúsculas ("casa a" -> "Casa A") la búsqueda encuentra al mismo modelo, y eso está permitido.
+            const existeCasa = await this.buscarPorNombre(cambios.nombreModelo);
+            if(existeCasa && existeCasa.id !== id){
                 throw new ConflictException("Ya se ha ingresado esta propiedad");
             }
         }
@@ -132,7 +131,7 @@ export class ModeloCasaService{
     async duplicarModeloCasa(id:string, nombreModelo:string):Promise<ModeloCasa>{
         const {id:_id, creadoEn:_creadoEn, fotos, ...datos} = await this.obtenerModeloAdmin(id);
 
-        if(await this.modeloCasaRepository.findOne({where:{nombreModelo}})){
+        if(await this.buscarPorNombre(nombreModelo)){
             throw new ConflictException(`Ya existe un modelo con el nombre "${nombreModelo}". Elige otro nombre.`);
         }
 
@@ -144,8 +143,13 @@ export class ModeloCasaService{
 
     // El formulario lo consulta antes de subir archivos a S3.
     async nombreDisponible(nombreModelo:string, excluirId?:string):Promise<{disponible:boolean}>{
-        const existente = await this.modeloCasaRepository.findOne({where:{nombreModelo}});
+        const existente = await this.buscarPorNombre(nombreModelo);
         return {disponible: !existente || existente.id === excluirId};
+    }
+
+    // Sin distinguir mayúsculas, igual que el índice único UQ_modelo_casa_nombre_lower.
+    private buscarPorNombre(nombreModelo:string):Promise<ModeloCasa | null>{
+        return this.modeloCasaRepository.findOne({where:{nombreModelo:Raw((columna) => `LOWER(${columna}) = LOWER(:nombreModelo)`, {nombreModelo})}});
     }
 
     // Borrado definitivo, solo si nadie lo ha solicitado, porque las solicitudes y reservas son datos de clientes.

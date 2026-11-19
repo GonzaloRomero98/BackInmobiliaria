@@ -1,13 +1,17 @@
 import { Repository } from 'typeorm';
-import { inicioSemana, MetricasService } from './metricas.service';
+import { inicioDia, inicioMes, inicioSemana, MetricasService } from './metricas.service';
 import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
 import { Solicitud } from '../solicitud/entities/solicitud.entity';
 import { Proyecto } from '../proyecto/entities/proyecto.entity';
 import { Reserva } from '../reserva/entities/reserva.entity';
 import { EventoModelo, TipoEventoModelo } from './entities/eventoModelo.entity';
 
-// Jueves 12 de noviembre de 2026 a las 15:00. Su semana empieza el lunes 9.
-const AHORA = new Date(2026, 10, 12, 15, 0);
+// Las fechas van con su desfase de Chile (-03 en verano, -04 en invierno), así el resultado no depende
+// de la zona horaria del equipo que corre los tests (el servidor corre en UTC).
+const chile = (fechaHora: string) => new Date(fechaHora);
+
+// Jueves 12 de noviembre de 2026 a las 15:00 en Chile. Su semana empieza el lunes 9.
+const AHORA = chile('2026-11-12T15:00:00-03:00');
 
 describe('MetricasService', () => {
   function constructorQb(metodos: string[], final: Record<string, jest.Mock>) {
@@ -18,9 +22,13 @@ describe('MetricasService', () => {
 
   function servicio(unidades: Record<string, string | null>) {
     const encadenables = ['innerJoin', 'select', 'addSelect', 'where', 'groupBy', 'addGroupBy', 'orderBy', 'limit'];
-    const qbSemanas = constructorQb(encadenables, { getRawMany: jest.fn().mockResolvedValue([
-      { semana: new Date(2026, 10, 9), solicitudes: '4' }, { semana: new Date(2026, 9, 26), solicitudes: '2' },
-    ]) });
+    // Solicitudes de las últimas 8 semanas: 4 en la del lunes 9-nov, 2 en la del 26-oct y una el domingo 8-nov
+    // a las 23:30 de Chile, que en UTC ya es lunes 9 pero cuenta en la semana del 2-nov.
+    const recientes = [
+      '2026-11-09T00:00:00-03:00', '2026-11-10T09:00:00-03:00', '2026-11-11T18:00:00-03:00', '2026-11-12T14:59:00-03:00',
+      '2026-10-26T10:00:00-03:00', '2026-11-01T23:00:00-03:00',
+      '2026-11-08T23:30:00-03:00',
+    ].map((f, i) => ({ id: `s${i}`, creadoEn: chile(f) }));
     const qbTop = constructorQb(encadenables, { getRawMany: jest.fn().mockResolvedValue([{ id: 'm1', nombreModelo: 'Casa A', proyecto: 'Los Robles', solicitudes: '7' }]) });
     const qbUnidades = constructorQb(['select', 'addSelect', 'where'], { getRawOne: jest.fn().mockResolvedValue(unidades) });
 
@@ -29,7 +37,8 @@ describe('MetricasService', () => {
       findAndCount: jest.fn(async ({ where }) => where.contactado === false
         ? [[{ id: 'p1', nombre: 'Luis', apellido: 'Soto', celular: '+56911111111', creadoEn: new Date(2026, 10, 2), visitaPreferida: null, modeloCasa: { nombreModelo: 'Cordillera', proyecto: { nombre: 'Vista Andes' } } }], 4]
         : [[{ id: 's1', nombre: 'Ana', apellido: 'Pérez', visitaPreferida: new Date(2026, 10, 13, 11), modeloCasa: { nombreModelo: 'Aurora', proyecto: { nombre: 'Los Robles' } } }], 3]),
-      createQueryBuilder: jest.fn().mockReturnValueOnce(qbSemanas).mockReturnValueOnce(qbTop),
+      find: jest.fn().mockResolvedValue(recientes),
+      createQueryBuilder: jest.fn().mockReturnValueOnce(qbTop),
     };
     const modelos = {
       count: jest.fn(async ({ where }) => (where.activo === false ? 3 : 4)),
@@ -49,7 +58,7 @@ describe('MetricasService', () => {
     };
 
     return {
-      qbUnidades, qbSemanas, solicitudes, reservas, modelos, eventos,
+      qbUnidades, solicitudes, reservas, modelos, eventos,
       service: new MetricasService(
         modelos as unknown as Repository<ModeloCasa>,
         solicitudes as unknown as Repository<Solicitud>,
@@ -108,14 +117,27 @@ describe('MetricasService', () => {
     expect(solicitudes.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ take: 5, order: { visitaPreferida: 'ASC' } }));
   });
 
-  it('solicitudes por semana: siempre 8 semanas de lunes a lunes, con 0 en las vacías', async () => {
-    const { service, qbSemanas } = servicio({ unidades: '0', reservados: '0', vendidos: '0' });
+  it('solicitudes por semana: siempre 8 semanas de lunes a lunes (hora de Chile), con 0 en las vacías', async () => {
+    const { service, solicitudes } = servicio({ unidades: '0', reservados: '0', vendidos: '0' });
     const { porSemana } = (await service.resumen(AHORA)).solicitudes;
     expect(porSemana).toHaveLength(8);
     expect(porSemana[0]).toEqual({ semana: '2026-09-21', solicitudes: 0 });
     expect(porSemana[5]).toEqual({ semana: '2026-10-26', solicitudes: 2 });
+    expect(porSemana[6]).toEqual({ semana: '2026-11-02', solicitudes: 1 });
     expect(porSemana[7]).toEqual({ semana: '2026-11-09', solicitudes: 4 });
-    expect(qbSemanas.where).toHaveBeenCalledWith('s.creadoEn >= :desde', { desde: new Date(2026, 8, 21) });
+    expect(solicitudes.find).toHaveBeenCalledWith({
+      select: { id: true, creadoEn: true },
+      where: { creadoEn: expect.objectContaining({ _value: chile('2026-09-21T00:00:00-03:00') }) },
+    });
+  });
+
+  it('reservas y ventas del mes desde el día 1 a las 00:00 de Chile, aunque en UTC ya sea otro mes', async () => {
+    const { service, reservas } = servicio({ unidades: '0', reservados: '0', vendidos: '0' });
+    // 30-nov a las 22:00 en Chile = 1-dic 01:00 UTC.
+    await service.resumen(chile('2026-11-30T22:00:00-03:00'));
+    const inicio = chile('2026-11-01T00:00:00-03:00');
+    expect(reservas.count).toHaveBeenCalledWith({ where: { creadoEn: expect.objectContaining({ _value: inicio }) } });
+    expect(reservas.count).toHaveBeenCalledWith({ where: { estado: 'VENDIDA', actualizadoEn: expect.objectContaining({ _value: inicio }) } });
   });
 
   it('sin modelos activos devuelve ceros (SUM entrega null)', async () => {
@@ -140,12 +162,34 @@ describe('MetricasService', () => {
     expect(solicitudes.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ where: { contactado: false }, order: { creadoEn: 'ASC' }, take: 5 }));
     expect(solicitudes.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ take: 8, order: { visitaPreferida: 'ASC' } }));
     expect(reservas.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ where: { estado: 'RESERVADA' }, order: { creadoEn: 'ASC' } }));
-    expect(solicitudes.count).toHaveBeenCalledWith({ where: { creadoEn: expect.objectContaining({ _value: new Date(2026, 10, 12) }) } });
+    expect(solicitudes.count).toHaveBeenCalledWith({ where: { creadoEn: expect.objectContaining({ _value: chile('2026-11-12T00:00:00-03:00') }) } });
+    expect(solicitudes.count).toHaveBeenCalledWith({ where: { creadoEn: expect.objectContaining({ _value: chile('2026-11-09T00:00:00-03:00') }) } });
+    expect(reservas.count).toHaveBeenCalledWith({ where: { estado: 'VENDIDA', actualizadoEn: expect.objectContaining({ _value: chile('2026-11-01T00:00:00-03:00') }) } });
   });
 
-  it('inicioSemana: lunes 00:00, también si el día ya es lunes o domingo', () => {
-    expect(inicioSemana(new Date(2026, 10, 12, 15))).toEqual(new Date(2026, 10, 9));
-    expect(inicioSemana(new Date(2026, 10, 9, 0, 1))).toEqual(new Date(2026, 10, 9));
-    expect(inicioSemana(new Date(2026, 10, 15, 23))).toEqual(new Date(2026, 10, 9));
+  it('inicioSemana: lunes 00:00 de Chile, también si el día ya es lunes o domingo', () => {
+    expect(inicioSemana(AHORA)).toEqual(chile('2026-11-09T00:00:00-03:00'));
+    expect(inicioSemana(chile('2026-11-09T00:01:00-03:00'))).toEqual(chile('2026-11-09T00:00:00-03:00'));
+    expect(inicioSemana(chile('2026-11-15T23:00:00-03:00'))).toEqual(chile('2026-11-09T00:00:00-03:00'));
+    expect(inicioSemana(AHORA, 7)).toEqual(chile('2026-09-21T00:00:00-03:00'));
+  });
+
+  it('inicioDia: a las 23:30 de Chile sigue siendo el mismo día, aunque en UTC ya sea el siguiente', () => {
+    expect(inicioDia(chile('2026-11-12T23:30:00-03:00'))).toEqual(chile('2026-11-12T00:00:00-03:00'));
+    expect(inicioDia(chile('2026-11-13T00:00:00-03:00'))).toEqual(chile('2026-11-13T00:00:00-03:00'));
+  });
+
+  it('cambios de hora: invierno (-04), el día que se adelanta el reloj y una semana que cruza el cambio', () => {
+    expect(inicioDia(chile('2026-07-15T10:00:00-04:00'))).toEqual(chile('2026-07-15T00:00:00-04:00'));
+    // El domingo 6-sep-2026 el reloj salta de 00:00 a 01:00: el día empieza a la 01:00 (-03).
+    expect(inicioDia(chile('2026-09-06T15:00:00-03:00'))).toEqual(chile('2026-09-06T01:00:00-03:00'));
+    // El domingo 5-abr-2026 se atrasa el reloj: el lunes 6 ya está en -04.
+    expect(inicioSemana(chile('2026-04-08T12:00:00-04:00'))).toEqual(chile('2026-04-06T00:00:00-04:00'));
+    expect(inicioSemana(chile('2026-04-08T12:00:00-04:00'), 1)).toEqual(chile('2026-03-30T00:00:00-03:00'));
+  });
+
+  it('inicioMes: día 1 a las 00:00 de Chile, también en enero y a fin de mes de noche', () => {
+    expect(inicioMes(chile('2026-11-30T22:00:00-03:00'))).toEqual(chile('2026-11-01T00:00:00-03:00'));
+    expect(inicioMes(chile('2027-01-01T00:30:00-03:00'))).toEqual(chile('2027-01-01T00:00:00-03:00'));
   });
 });

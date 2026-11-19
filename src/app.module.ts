@@ -1,5 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
@@ -20,6 +20,7 @@ import { EstadoBaseDatosModule } from "./modules/estadoBaseDatos/estado-base-dat
 import { MetricasModule } from "./modules/metricas/metricas.module";
 import { opcionesBaseDatos } from "./database/opciones-bd";
 import { esLecturaSsr } from "./limite-ssr";
+import { DuplicadoFilter } from "./database/duplicado.filter";
 
 @Module({
   imports: [
@@ -53,7 +54,10 @@ import { esLecturaSsr } from "./limite-ssr";
     ReservaModule,
     MetricasModule
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_FILTER, useClass: DuplicadoFilter },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

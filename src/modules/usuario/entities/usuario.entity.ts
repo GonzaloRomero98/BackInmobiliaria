@@ -1,7 +1,9 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
 import { Rol } from "../../rol/entities/rol.entity";
 
 
+// UNIQUE (LOWER(correo)), creado en la migración NombresUnicos. TypeORM no maneja índices sobre expresiones.
+@Index('UQ_usuario_correo_lower', {synchronize:false})
 @Entity('usuario')
 export class Usuario {
     @PrimaryGeneratedColumn('uuid')

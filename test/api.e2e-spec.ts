@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ServiceUnavailableException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { getDataSourceToken } from '@nestjs/typeorm';
+import { QueryFailedError } from 'typeorm';
 import { getStorageToken, ThrottlerStorageService } from '@nestjs/throttler';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -625,6 +626,25 @@ describe('API (e2e, BD simulada)', () => {
       await http().post('/api/modeloCasa').set(auth(adminToken)).send(body).expect(409);
     });
 
+    it('dos altas simultáneas con el mismo nombre: la BD rechaza la segunda (23505) -> 409, no 500', async () => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
+      const duplicado = Object.assign(new QueryFailedError('INSERT ...', [], new Error('duplicate key')), {
+        code: '23505', constraint: 'UQ_modelo_casa_nombre_lower',
+      });
+      repo(ModeloCasa).save.mockRejectedValueOnce(duplicado);
+      const res = await http().post('/api/modeloCasa').set(auth(adminToken)).send(body).expect(409);
+      expect(res.body).toEqual({ statusCode: 409, error: 'Conflict', message: expect.stringContaining('Ya existe un registro') });
+      // No filtra el SQL ni el nombre del índice.
+      expect(JSON.stringify(res.body)).not.toMatch(/INSERT|UQ_/);
+    });
+
+    it('otros errores de la BD siguen respondiendo 500 genérico', async () => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
+      repo(ModeloCasa).save.mockRejectedValueOnce(Object.assign(new QueryFailedError('INSERT ...', [], new Error('x')), { code: '23502' }));
+      const res = await http().post('/api/modeloCasa').set(auth(adminToken)).send(body).expect(500);
+      expect(res.body).toEqual({ statusCode: 500, message: 'Internal server error' });
+    });
+
     it('caracteristicas inexistentes -> 400', async () => {
       repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
       await http().post('/api/modeloCasa').set(auth(adminToken)).send({ ...body, caracteristicasID: [7] }).expect(400);
@@ -701,7 +721,8 @@ describe('API (e2e, BD simulada)', () => {
       const url = '/api/modeloCasa/admin/nombre-disponible';
       repo(ModeloCasa).findOne.mockResolvedValueOnce(null);
       expect((await http().get(`${url}?nombre=${encodeURIComponent('  Casa Z ')}`).set(auth(adminToken)).expect(200)).body).toEqual({ disponible: true });
-      expect(repo(ModeloCasa).findOne).toHaveBeenLastCalledWith({ where: { nombreModelo: 'Casa Z' } });
+      // Sin distinguir mayúsculas y con el nombre ya recortado.
+      expect(repo(ModeloCasa).findOne.mock.lastCall![0].where.nombreModelo.objectLiteralParameters).toEqual({ nombreModelo: 'Casa Z' });
 
       repo(ModeloCasa).findOne.mockResolvedValueOnce({ id: 'otro' });
       expect((await http().get(`${url}?nombre=Casa%20A`).set(auth(adminToken)).expect(200)).body).toEqual({ disponible: false });
@@ -846,7 +867,8 @@ describe('API (e2e, BD simulada)', () => {
     it('GET con ADMIN -> 200; SECRETARIO -> 403', async () => {
       const qb = { innerJoin: jest.fn(), select: jest.fn(), addSelect: jest.fn(), where: jest.fn(), groupBy: jest.fn(), addGroupBy: jest.fn(), orderBy: jest.fn(), limit: jest.fn(), getRawMany: jest.fn().mockResolvedValue([]) };
       for (const m of ['innerJoin', 'select', 'addSelect', 'where', 'groupBy', 'addGroupBy', 'orderBy', 'limit'] as const) qb[m].mockReturnValue(qb);
-      repo(Solicitud).createQueryBuilder.mockReturnValueOnce(qb).mockReturnValueOnce(qb);
+      // Solo "más solicitados" usa query builder; las semanas se arman desde find (vacío por defecto).
+      repo(Solicitud).createQueryBuilder.mockReturnValueOnce(qb);
       const qbCasas = { select: jest.fn(), addSelect: jest.fn(), where: jest.fn(), getRawOne: jest.fn().mockResolvedValue({ unidades: '4', reservados: '1', vendidos: null }) };
       for (const m of ['select', 'addSelect', 'where'] as const) qbCasas[m].mockReturnValue(qbCasas);
       repo(ModeloCasa).createQueryBuilder.mockReturnValueOnce(qbCasas);

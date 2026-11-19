@@ -261,15 +261,70 @@ describe('Sesiones cerradas (PostgreSQL real)', () => {
   });
 });
 
+// Deshace las migraciones más nuevas, una por una, hasta revertir `nombre` incluida.
+// Así el test no se rompe cada vez que se agrega una migración al final.
+async function deshacerHasta(nombre: string) {
+  let ultima: string;
+  do {
+    ultima = (await ds.query(`SELECT name FROM migrations ORDER BY id DESC LIMIT 1`))[0].name;
+    await ds.undoLastMigration();
+  } while (ultima !== nombre);
+}
+
+// quote_ident porque los nombres tienen mayúsculas; sin comillas Postgres los buscaría en minúsculas.
+const existeIndice = async (nombre: string) => (await ds.query(`SELECT to_regclass(quote_ident($1)) AS t`, [nombre]))[0].t !== null;
+
+describe('Nombres únicos sin distinguir mayúsculas (PostgreSQL real)', () => {
+  const duplicado = (indice: string) => expect.objectContaining({ code: '23505', constraint: indice });
+
+  it('característica y modelo: la BD rechaza el mismo nombre con otras mayúsculas', async () => {
+    const caracteristicas = ds.getRepository(Caracteristica);
+    await caracteristicas.save({ nombre: 'Piscina' });
+    await expect(caracteristicas.save({ nombre: 'PISCINA' })).rejects.toEqual(duplicado('UQ_caracteristica_nombre_lower'));
+
+    const [a, b] = [await crearModelo(1), await crearModelo(1)];
+    await expect(ds.query(`UPDATE modelo_casa SET nombre_modelo = UPPER($1) WHERE id = $2`, [a.nombreModelo, b.id]))
+      .rejects.toEqual(duplicado('UQ_modelo_casa_nombre_lower'));
+  });
+
+  it('usuario: el login encuentra la cuenta con otras mayúsculas y la BD rechaza el correo repetido', async () => {
+    const rol = await ds.getRepository(Rol).save({ nombre: 'ADMIN' });
+    const repo = ds.getRepository(Usuario);
+    await repo.save({ correo: 'Maria@Audit.cl', contrasena: 'hash', nombre: 'María', rol });
+    const usuarios = new UsuarioService(repo, {} as never, {} as never);
+
+    expect(await usuarios.usuarioPorCorreo('maria@AUDIT.CL')).toMatchObject({ correo: 'Maria@Audit.cl' });
+    await expect(repo.save({ correo: 'MARIA@audit.cl', contrasena: 'hash', nombre: 'Otra', rol }))
+      .rejects.toEqual(duplicado('UQ_usuario_correo_lower'));
+  });
+
+  it('la migración no se aplica si ya hay repetidos: avisa cuál tabla revisar y no deja índices a medias', async () => {
+    await deshacerHasta('NombresUnicos1794500000000');
+    expect(await existeIndice('UQ_usuario_correo_lower')).toBe(false);
+    await ds.getRepository(Caracteristica).save({ nombre: 'quincho' });
+    await ds.getRepository(Caracteristica).save({ nombre: 'QUINCHO' });
+
+    await expect(ds.runMigrations()).rejects.toThrow(/caracteristica\.nombre tiene 1 valor\(es\) repetido\(s\)/);
+    // La migración corre en una transacción: tampoco quedó el índice de usuario.
+    expect(await existeIndice('UQ_usuario_correo_lower')).toBe(false);
+
+    await ds.query(`DELETE FROM caracteristica WHERE nombre = 'QUINCHO'`);
+    await ds.runMigrations();
+    for (const indice of ['UQ_usuario_correo_lower', 'UQ_modelo_casa_nombre_lower', 'UQ_caracteristica_nombre_lower']) {
+      expect(await existeIndice(indice)).toBe(true);
+    }
+  });
+});
+
 describe('Migraciones nuevas (PostgreSQL real)', () => {
   const reglaFk = async () => (await ds.query(
     `SELECT delete_rule FROM information_schema.referential_constraints WHERE constraint_name = 'FK_reserva_solicitud'`))[0]?.delete_rule;
 
   it('ReservaSinCascada y SesionesCerradas se revierten y se vuelven a aplicar', async () => {
     expect(await reglaFk()).toBe('NO ACTION');
-    await ds.undoLastMigration();
+    await deshacerHasta('ReservaSinCascada1794300000000');
     expect(await reglaFk()).toBe('CASCADE');
-    await ds.undoLastMigration();
+    await deshacerHasta('SesionesCerradas1794200000000');
     expect((await ds.query(`SELECT to_regclass('sesion_cerrada') AS t`))[0].t).toBeNull();
 
     await ds.runMigrations();

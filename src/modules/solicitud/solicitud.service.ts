@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -30,6 +30,8 @@ const fechaParaCliente = (fecha: Date) => fecha.toLocaleString('es-CL', {
 });
 
 const RETENCION_DIAS_POR_DEFECTO = 365;
+// Un valor menor (o vacío, que Number() convierte en 0) borraría casi todas las solicitudes.
+export const RETENCION_DIAS_MINIMOS = 30;
 // Ley 19.628: los datos necesarios para cumplir un contrato se conservan.
 const MSJ_RESERVA_ACTIVA = 'La solicitud tiene una reserva activa o una venta; sus datos se conservan para ejecutar el contrato. Si la reserva se anula, se podrá eliminar.';
 const VISITA_DIAS_MAXIMOS = 60;
@@ -42,8 +44,16 @@ export function celdaCsv(valor:string):string{
     return /[";\r\n]/.test(seguro) ? `"${seguro.replace(/"/g, '""')}"` : seguro;
 }
 
+// El nombre del formulario público no está verificado. En el saludo del correo va solo la primera palabra,
+// con letras y hasta 30 caracteres, para que nadie use el correo de Inmocap para mandar un texto propio.
+export function nombreParaSaludo(nombre:string):string{
+    return (nombre.trim().split(/\s+/)[0] ?? '').replace(/[^\p{L}\p{M}'-]/gu, '').slice(0, 30);
+}
+
 @Injectable()
 export class SolicitudService{
+    private readonly logger = new Logger('Solicitudes');
+
     constructor(
         @InjectRepository(Solicitud)
         private readonly solicitudRepository : Repository<Solicitud>,
@@ -102,8 +112,9 @@ export class SolicitudService{
         const fecha = fechaParaCliente(solicitud.visitaPreferida!);
         const destino = proyecto.salaLatitud !== null && proyecto.salaLongitud !== null
             ? `${proyecto.salaLatitud},${proyecto.salaLongitud}` : proyecto.salaDireccion ?? '';
+        const nombre = solicitud.origen === OrigenSolicitud.WEB ? nombreParaSaludo(solicitud.nombre) : solicitud.nombre;
         const lineas = [
-            `Hola ${solicitud.nombre}:`,
+            nombre ? `Hola ${nombre}:` : 'Hola:',
             '',
             confirmada
                 ? `Tu visita a la sala de ventas de ${proyecto.nombre} (modelo ${solicitud.modeloCasa.nombreModelo}) está confirmada para el ${fecha}.`
@@ -117,11 +128,11 @@ export class SolicitudService{
             'Saludos,',
             'Equipo de ventas Inmocap',
         ];
-        void this.correoService.enviar(
-            solicitud.correo,
-            confirmada ? `Visita confirmada: ${proyecto.nombre}` : `Recibimos tu solicitud de visita: ${proyecto.nombre}`,
-            lineas.filter((linea) => linea !== null).join('\n'),
-        );
+        const texto = lineas.filter((linea) => linea !== null).join('\n');
+        // Sin confirmar, el correo lo dispara el formulario público y cuenta para el tope diario.
+        void (confirmada
+            ? this.correoService.enviar(solicitud.correo, `Visita confirmada: ${proyecto.nombre}`, texto)
+            : this.correoService.enviarDesdeWeb(solicitud.correo, `Recibimos tu solicitud de visita: ${proyecto.nombre}`, texto));
     }
 
     // Solo si el proyecto tiene sala de ventas, y entre ahora y VISITA_DIAS_MAXIMOS días.
@@ -354,7 +365,12 @@ export class SolicitudService{
     // Retención: los datos personales de las solicitudes se borran al cumplir el plazo.
     @Cron(CronExpression.EVERY_DAY_AT_3AM, {timeZone:'America/Santiago'})
     async eliminarVencidas():Promise<number>{
-        const dias = Number(this.configService.get('SOLICITUD_RETENCION_DIAS') ?? RETENCION_DIAS_POR_DEFECTO);
+        const valor = this.configService.get<string>('SOLICITUD_RETENCION_DIAS');
+        const dias = valor === undefined ? RETENCION_DIAS_POR_DEFECTO : Number(valor);
+        if(!Number.isInteger(dias) || dias < RETENCION_DIAS_MINIMOS){
+            this.logger.error(`SOLICITUD_RETENCION_DIAS="${valor}" no es válido (entero de ${RETENCION_DIAS_MINIMOS} o más). No se borró ninguna solicitud.`);
+            return 0;
+        }
         const limite = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
         // Las solicitudes con reserva activa o venta se conservan mientras dure el contrato.
         const protegidas = await this.reservaRepository.find({

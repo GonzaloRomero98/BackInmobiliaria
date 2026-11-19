@@ -235,6 +235,16 @@ describe('ModeloCasaService', () => {
       expect(modeloRepo.findOne).toHaveBeenCalledTimes(1);
     });
 
+    it('409 aunque el otro modelo tenga el nombre con otras mayúsculas; cambiar solo mayúsculas del propio sí se permite', async () => {
+      modeloRepo.findOne.mockResolvedValueOnce(existente()).mockResolvedValueOnce({ id: 'otro', nombreModelo: 'casa b' });
+      await expect(service.actualizarModeloCasa('m1', { nombreModelo: 'Casa B' })).rejects.toBeInstanceOf(ConflictException);
+
+      // "Casa A" -> "CASA A": la búsqueda sin mayúsculas encuentra al mismo modelo m1.
+      modeloRepo.findOne.mockReset().mockResolvedValue(existente());
+      const r = await service.actualizarModeloCasa('m1', { nombreModelo: 'CASA A' });
+      expect(r.nombreModelo).toBe('CASA A');
+    });
+
     it('cambia proyecto y características validando que existan', async () => {
       modeloRepo.findOne.mockResolvedValue(existente());
       proyectoRepo.findOne.mockResolvedValue(null);
@@ -252,7 +262,10 @@ describe('ModeloCasaService', () => {
     it('libre si nadie lo usa', async () => {
       modeloRepo.findOne.mockResolvedValue(null);
       expect(await service.nombreDisponible('Casa Z')).toEqual({ disponible: true });
-      expect(modeloRepo.findOne).toHaveBeenCalledWith({ where: { nombreModelo: 'Casa Z' } });
+      // Sin distinguir mayúsculas, igual que el índice único de la BD.
+      const { nombreModelo } = modeloRepo.findOne.mock.calls[0][0].where;
+      expect(nombreModelo.getSql('nombre_modelo')).toBe('LOWER(nombre_modelo) = LOWER(:nombreModelo)');
+      expect(nombreModelo.objectLiteralParameters).toEqual({ nombreModelo: 'Casa Z' });
     });
 
     it('ocupado si lo usa otro modelo', async () => {
@@ -280,7 +293,8 @@ describe('ModeloCasaService', () => {
 
       const copia = await service.duplicarModeloCasa('m1', 'Casa B');
 
-      expect(modeloRepo.findOne).toHaveBeenLastCalledWith({ where: { nombreModelo: 'Casa B' } });
+      // El nombre se busca sin distinguir mayúsculas.
+      expect(modeloRepo.findOne.mock.lastCall[0].where.nombreModelo.objectLiteralParameters).toEqual({ nombreModelo: 'Casa B' });
       expect(modeloRepo.save).toHaveBeenCalledTimes(1);
       expect(galeriaRepo.save).not.toHaveBeenCalled();
       const guardado = modeloRepo.save.mock.calls[0][0];

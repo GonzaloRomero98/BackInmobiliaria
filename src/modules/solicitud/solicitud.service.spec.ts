@@ -1,7 +1,7 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FindOperator, In, IsNull, Not, Repository } from 'typeorm';
-import { celdaCsv, SolicitudService } from './solicitud.service';
+import { celdaCsv, nombreParaSaludo, SolicitudService } from './solicitud.service';
 import { Solicitud } from './entities/solicitud.entity';
 import { ModeloCasa } from '../modeloCasa/entities/modeloCasa.entity';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -19,7 +19,7 @@ describe('SolicitudService', () => {
   let cotizacionRepo: { find: jest.Mock; save: jest.Mock; create: jest.Mock };
   let manager: { save: jest.Mock; create: jest.Mock; find: jest.Mock; delete: jest.Mock; createQueryBuilder: jest.Mock };
   let qbReserva: Record<'delete' | 'from' | 'where' | 'execute', jest.Mock>;
-  let correo: { enviar: jest.Mock };
+  let correo: { enviar: jest.Mock; enviarDesdeWeb: jest.Mock };
   let service: SolicitudService;
   const dto = {
     nombre: 'Juan', apellido: 'Pérez', correo: 'j@p.cl', celular: '+56911111111',
@@ -58,7 +58,7 @@ describe('SolicitudService', () => {
     modeloRepo = { findOne: jest.fn() };
     reservaRepo = { exists: jest.fn().mockResolvedValue(false), find: jest.fn().mockResolvedValue([]) };
     auditoria = { registrar: jest.fn() };
-    correo = { enviar: jest.fn(async () => undefined) };
+    correo = { enviar: jest.fn(async () => undefined), enviarDesdeWeb: jest.fn(async () => undefined) };
     crear();
   });
 
@@ -248,6 +248,21 @@ describe('SolicitudService', () => {
       expect((Date.now() - fechaLimite().getTime()) / 86_400_000).toBeCloseTo(30, 2);
     });
 
+    // SOLICITUD_RETENCION_DIAS= (vacío en el .env) llega como '' y Number('') es 0: borraría todo.
+    it.each(['', '  ', '0', '-1', '29', '30.5', 'abc'])('con SOLICITUD_RETENCION_DIAS=%j no borra nada', async (valor) => {
+      const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      crear({ SOLICITUD_RETENCION_DIAS: valor });
+
+      expect(await service.eliminarVencidas()).toBe(0);
+
+      expect(reservaRepo.find).not.toHaveBeenCalled();
+      expect(manager.find).not.toHaveBeenCalled();
+      expect(manager.delete).not.toHaveBeenCalled();
+      expect(auditoria.registrar).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('No se borró ninguna solicitud'));
+      error.mockRestore();
+    });
+
     it('excluye las solicitudes con reserva activa o venta', async () => {
       reservaRepo.find.mockResolvedValue([{ solicitud: { id: 's9' } }, { solicitud: { id: 's8' } }]);
       await service.eliminarVencidas();
@@ -338,10 +353,47 @@ describe('SolicitudService', () => {
       modeloRepo.findOne.mockResolvedValue(conSala);
       const s = await service.crearSolicitud({ ...dto, visitaPreferida: enDias(2) });
       expect(s).toMatchObject({ origen: 'WEB', contactado: false, visitaEstado: 'POR_CONFIRMAR' });
-      const [para, asunto, texto] = correo.enviar.mock.calls[0];
+      // Lo dispara el formulario público, así que pasa por el tope diario.
+      expect(correo.enviar).not.toHaveBeenCalled();
+      const [para, asunto, texto] = correo.enviarDesdeWeb.mock.calls[0];
       expect([para, asunto]).toEqual(['j@p.cl', 'Recibimos tu solicitud de visita: Los Robles']);
+      expect(texto).toMatch(/^Hola Juan:\n/);
       expect(texto).toContain('dentro de 48 horas');
       expect(texto).toContain('destination=1%20Sur%20100');
+    });
+
+    it('desde la web el saludo no lleva el texto libre del nombre', async () => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      await service.crearSolicitud({ ...dto, nombre: 'Tu cuenta fue bloqueada, entra a evil.cl', visitaPreferida: enDias(2) });
+      const texto: string = correo.enviarDesdeWeb.mock.calls[0][2];
+      expect(texto).toMatch(/^Hola Tu:\n/);
+      expect(texto).not.toContain('evil');
+    });
+
+    it('desde el panel el saludo usa el nombre completo que escribió la secretaria', async () => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      const { aceptaPrivacidad: _, ...datos } = dto;
+      await service.crearDesdePanel({ ...datos, nombre: 'María José', origen: 'TELEFONO' as never, clienteInformado: true, visitaPreferida: enDias(2) });
+      expect(correo.enviar.mock.calls[0][2]).toMatch(/^Hola María José:\n/);
+      expect(correo.enviarDesdeWeb).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['Juan', 'Juan'],
+      ['  José-Luis  Pérez', 'José-Luis'],
+      ["O'Higgins", "O'Higgins"],
+      ['evil.cl/x', 'evilclx'],
+      ['https://evil.cl', 'httpsevilcl'],
+      ['12345', ''],
+      ['A'.repeat(200), 'A'.repeat(30)],
+    ])('nombreParaSaludo(%j) = %j', (nombre, esperado) => {
+      expect(nombreParaSaludo(nombre)).toBe(esperado);
+    });
+
+    it('si del nombre no queda nada, el saludo es solo "Hola:"', async () => {
+      modeloRepo.findOne.mockResolvedValue(conSala);
+      await service.crearSolicitud({ ...dto, nombre: '1234 www', visitaPreferida: enDias(2) });
+      expect(correo.enviarDesdeWeb.mock.calls[0][2]).toMatch(/^Hola:\n/);
     });
 
     it('desde el panel queda contactada, con su origen y la visita confirmada', async () => {

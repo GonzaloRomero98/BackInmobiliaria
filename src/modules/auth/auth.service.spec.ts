@@ -37,6 +37,20 @@ describe('AuthService', () => {
     expect(res).not.toHaveProperty('usuario.contrasena');
   });
 
+  it('login con el correo en otras mayúsculas entra, y el token lleva el correo guardado', async () => {
+    const hash = await bcrypt.hash('secreta123', 4);
+    // usuarioPorCorreo busca sin distinguir mayúsculas (ver usuario.service.spec.ts).
+    usuarioService.usuarioPorCorreo.mockResolvedValue({
+      id: 'u1', correo: 'maria@inmocap.cl', contrasena: hash, activo: true, rol: { nombre: RolUsuario.ADMIN },
+    });
+
+    const res = await authService.loginUsuario({ correo: 'Maria@Inmocap.CL', contrasena: 'secreta123' });
+
+    expect(usuarioService.usuarioPorCorreo).toHaveBeenCalledWith('Maria@Inmocap.CL');
+    expect(res.usuario.correo).toBe('maria@inmocap.cl');
+    expect(jwtService.verify(res.access_token)).toMatchObject({ correo: 'maria@inmocap.cl' });
+  });
+
   it('login con contraseña incorrecta lanza 401', async () => {
     const hash = await bcrypt.hash('secreta123', 4);
     usuarioService.usuarioPorCorreo.mockResolvedValue({

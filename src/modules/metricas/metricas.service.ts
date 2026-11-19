@@ -12,14 +12,49 @@ import { RegistrarEventoDto } from "./dto/registrarEvento.dto";
 const DIA_MS = 24 * 60 * 60 * 1000;
 export const SEMANAS_GRAFICO = 8;
 
-// Lunes a las 00:00 de la semana de la fecha, en la hora del servidor.
-export function inicioSemana(fecha: Date): Date {
-    const lunes = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
-    lunes.setDate(lunes.getDate() - ((lunes.getDay() + 6) % 7));
-    return lunes;
+const HORA_MS = 60 * 60 * 1000;
+
+// "Hoy", "esta semana" y "este mes" se cuentan en hora de Chile, no en la del servidor (UTC en EC2).
+// No se cambia la variable TZ del proceso: las columnas timestamp sin zona (creado_en) se leerían corridas.
+const FECHA_CHILE = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Santiago', year:'numeric', month:'2-digit', day:'2-digit'});
+
+// "AAAA-MM-DD" del día en Chile.
+const claveDia = (fecha: Date) => FECHA_CHILE.format(fecha);
+
+function fechaChile(fecha: Date){
+    const [anio, mes, dia] = claveDia(fecha).split('-').map(Number);
+    return {anio, mes, dia};
 }
 
-const claveDia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Primer instante de ese día en Chile. Acepta días fuera de rango (0, negativos), como Date.UTC.
+// Chile está entre UTC-3 y UTC-4 y cambia la hora a medianoche, así que se busca la primera hora UTC de esa fecha
+// que en Chile ya es ese día: las 00:00, o la 01:00 el día en que se adelanta el reloj.
+function inicioDiaChile(anio: number, mes: number, dia: number): Date {
+    const base = Date.UTC(anio, mes - 1, dia);
+    const clave = new Date(base).toISOString().slice(0, 10);
+    for (let hora = 0; hora < 24; hora++) {
+        const instante = new Date(base + hora * HORA_MS);
+        if (claveDia(instante) === clave) return instante;
+    }
+    throw new Error(`No se encontró el inicio del día ${clave} en Chile`);
+}
+
+export function inicioDia(fecha: Date): Date {
+    const {anio, mes, dia} = fechaChile(fecha);
+    return inicioDiaChile(anio, mes, dia);
+}
+
+// Lunes a las 00:00 (Chile) de la semana de la fecha, o de `semanasAtras` semanas antes.
+export function inicioSemana(fecha: Date, semanasAtras = 0): Date {
+    const {anio, mes, dia} = fechaChile(fecha);
+    const diaSemana = new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay();
+    return inicioDiaChile(anio, mes, dia - (diaSemana + 6) % 7 - 7 * semanasAtras);
+}
+
+export function inicioMes(fecha: Date): Date {
+    const {anio, mes} = fechaChile(fecha);
+    return inicioDiaChile(anio, mes, 1);
+}
 
 @Injectable()
 export class MetricasService{
@@ -47,12 +82,11 @@ export class MetricasService{
     async resumen(ahora = new Date()){
         const hace30Dias = new Date(ahora.getTime() - 30 * DIA_MS);
         const hace60Dias = new Date(ahora.getTime() - 60 * DIA_MS);
-        const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-        const primeraSemana = inicioSemana(ahora);
-        primeraSemana.setDate(primeraSemana.getDate() - 7 * (SEMANAS_GRAFICO - 1));
+        const mes = inicioMes(ahora);
+        const primeraSemana = inicioSemana(ahora, SEMANAS_GRAFICO - 1);
 
         const [total, pendientes, ultimos30Dias, previos30Dias, publicados, borradores, casas, proyectosActivos,
-            reservasMes, ventasMes, visitas, porSemana, masSolicitados, escaneosQr, sesionesAr] = await Promise.all([
+            reservasMes, ventasMes, visitas, recientes, masSolicitados, escaneosQr, sesionesAr] = await Promise.all([
             this.solicitudRepository.count(),
             this.solicitudRepository.count({where:{contactado:false}}),
             this.solicitudRepository.count({where:{creadoEn:MoreThanOrEqual(hace30Dias)}}),
@@ -66,15 +100,12 @@ export class MetricasService{
                 .where('m.activo = true')
                 .getRawOne<{unidades:string|null, reservados:string|null, vendidos:string|null}>(),
             this.proyectoRepository.count({where:{activo:true}}),
-            this.reservaRepository.count({where:{creadoEn:MoreThanOrEqual(inicioMes)}}),
-            this.reservaRepository.count({where:{estado:EstadoReserva.VENDIDA, actualizadoEn:MoreThanOrEqual(inicioMes)}}),
+            this.reservaRepository.count({where:{creadoEn:MoreThanOrEqual(mes)}}),
+            this.reservaRepository.count({where:{estado:EstadoReserva.VENDIDA, actualizadoEn:MoreThanOrEqual(mes)}}),
             this.proximasVisitas(ahora, 5),
-            this.solicitudRepository.createQueryBuilder('s')
-                .select(`date_trunc('week', s.creadoEn)`, 'semana')
-                .addSelect('COUNT(*)', 'solicitudes')
-                .where('s.creadoEn >= :desde', {desde:primeraSemana})
-                .groupBy('semana')
-                .getRawMany<{semana:Date, solicitudes:string}>(),
+            // Las semanas se arman aquí y no con date_trunc, que usaría la zona de la BD.
+            // Mejora pendiente: trae una fila por solicitud de las últimas 8 semanas; con decenas de miles conviene agrupar en SQL.
+            this.solicitudRepository.find({select:{id:true, creadoEn:true}, where:{creadoEn:MoreThanOrEqual(primeraSemana)}}),
             this.solicitudRepository.createQueryBuilder('s')
                 .innerJoin('s.modeloCasa', 'm')
                 .innerJoin('m.proyecto', 'p')
@@ -95,11 +126,14 @@ export class MetricasService{
         const reservados = Number(casas?.reservados ?? 0);
         const vendidos = Number(casas?.vendidos ?? 0);
 
-        const conteoSemana = new Map(porSemana.map((s) => [claveDia(new Date(s.semana)), Number(s.solicitudes)]));
+        const conteoSemana = new Map<string, number>();
+        for(const {creadoEn} of recientes){
+            const semana = claveDia(inicioSemana(creadoEn));
+            conteoSemana.set(semana, (conteoSemana.get(semana) ?? 0) + 1);
+        }
         const semanas = Array.from({length:SEMANAS_GRAFICO}, (_, i) => {
-            const lunes = new Date(primeraSemana);
-            lunes.setDate(primeraSemana.getDate() + 7 * i);
-            return {semana:claveDia(lunes), solicitudes:conteoSemana.get(claveDia(lunes)) ?? 0};
+            const semana = claveDia(inicioSemana(ahora, SEMANAS_GRAFICO - 1 - i));
+            return {semana, solicitudes:conteoSemana.get(semana) ?? 0};
         });
 
         return {
@@ -115,19 +149,17 @@ export class MetricasService{
 
     // Trae nombres y celulares, por eso GET /metricas/seguimiento se audita como lectura de datos personales.
     async seguimiento(ahora = new Date()){
-        const inicioDia = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
-        const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
         const [[porContactar, pendientes], nuevasHoy, nuevasSemana, visitas, [reservas, reservasEnCurso], ventasMes] = await Promise.all([
             this.solicitudRepository.findAndCount({
                 where:{contactado:false}, relations:{modeloCasa:{proyecto:true}}, order:{creadoEn:'ASC'}, take:5,
             }),
-            this.solicitudRepository.count({where:{creadoEn:MoreThanOrEqual(inicioDia)}}),
+            this.solicitudRepository.count({where:{creadoEn:MoreThanOrEqual(inicioDia(ahora))}}),
             this.solicitudRepository.count({where:{creadoEn:MoreThanOrEqual(inicioSemana(ahora))}}),
             this.proximasVisitas(ahora, 8),
             this.reservaRepository.findAndCount({
                 where:{estado:EstadoReserva.RESERVADA}, relations:{solicitud:{modeloCasa:{proyecto:true}}}, order:{creadoEn:'ASC'}, take:5,
             }),
-            this.reservaRepository.count({where:{estado:EstadoReserva.VENDIDA, actualizadoEn:MoreThanOrEqual(inicioMes)}}),
+            this.reservaRepository.count({where:{estado:EstadoReserva.VENDIDA, actualizadoEn:MoreThanOrEqual(inicioMes(ahora))}}),
         ]);
         return {
             solicitudes: {

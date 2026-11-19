@@ -111,6 +111,14 @@ describe('UsuarioService', () => {
     expect(correo.objectLiteralParameters).toEqual({ correo: 'Ana@X.cl' });
   });
 
+  it('usuarioPorCorreo (login) tampoco distingue mayúsculas', async () => {
+    repo.findOne.mockResolvedValue({ id: 'u1', correo: 'maria@inmocap.cl' });
+    expect(await service.usuarioPorCorreo('Maria@Inmocap.CL')).toMatchObject({ id: 'u1' });
+    const { correo } = repo.findOne.mock.calls[0][0].where;
+    expect(correo.getSql('correo')).toBe('LOWER(correo) = LOWER(:correo)');
+    expect(correo.objectLiteralParameters).toEqual({ correo: 'Maria@Inmocap.CL' });
+  });
+
   it('rechaza si el rol no existe en la BD', async () => {
     repo.findOne.mockResolvedValue(null);
     rolService.ObtenerRolByNombre.mockResolvedValue(null);
