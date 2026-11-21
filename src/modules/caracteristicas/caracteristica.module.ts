@@ -9,6 +9,5 @@ import { CaracteristicaService } from "./caracteristica.service";
     imports:[TypeOrmModule.forFeature([Caracteristica]), AuthModule],
     controllers:[CaracteristicasController],
     providers:[CaracteristicaService],
-    exports:[TypeOrmModule]
 })
 export class CaracteristicaModule{}

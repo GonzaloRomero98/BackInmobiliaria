@@ -13,6 +13,5 @@ import { S3Module } from "../s3/s3.module";
     imports:[TypeOrmModule.forFeature([ModeloCasa, Proyecto, Caracteristica, GaleriaModeloCasa]), AuthModule, S3Module],
     controllers:[ModeloCasaController],
     providers:[ModeloCasaService],
-    exports:[TypeOrmModule, ModeloCasaService]
 })
 export class ModeloCasaModule{}

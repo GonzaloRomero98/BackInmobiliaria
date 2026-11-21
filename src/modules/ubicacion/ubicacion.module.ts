@@ -9,7 +9,6 @@ import { UbicacionService } from "./ubicacion.service";
     imports:[TypeOrmModule.forFeature([Ciudad, Region])],
     controllers:[UbicacionController],
     providers:[UbicacionService],
-    exports:[UbicacionService, TypeOrmModule],
 })
 
 export class UbicacionModule{}

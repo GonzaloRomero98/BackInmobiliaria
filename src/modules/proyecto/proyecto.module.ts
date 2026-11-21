@@ -13,6 +13,5 @@ import { S3Module } from "../s3/s3.module";
     imports:[TypeOrmModule.forFeature([Proyecto, Ciudad, NormativaProyecto]), AuthModule, S3Module],
     controllers:[PoryectoController],
     providers:[ProyectoService, EntornoService],
-    exports:[TypeOrmModule]
 })
 export class ProyectoModule{}

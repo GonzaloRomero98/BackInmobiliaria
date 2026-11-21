@@ -14,6 +14,5 @@ import { CorreoService } from "../correo/correo.service";
     imports:[TypeOrmModule.forFeature([Solicitud, ModeloCasa, Reserva, NotaSolicitud, Cotizacion]), AuthModule],
     controllers:[SolicitudController],
     providers:[SolicitudService, CorreoService],
-    exports:[TypeOrmModule]
 })
 export class SolicitudModule{}
