@@ -20,7 +20,7 @@ export class Solicitud{
     @Column({length:20})
     celular:string;
 
-    @Column({name:'mensjae', type:'text', nullable:true})
+    @Column({type:'text', nullable:true})
     mensaje:string | null;
 
     @Column({default:false})

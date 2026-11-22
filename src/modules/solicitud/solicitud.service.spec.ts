@@ -443,6 +443,24 @@ describe('SolicitudService', () => {
       modeloCasa: { nombreModelo: 'Casa A', proyecto: { nombre: 'Los Robles', salaDireccion: '1 Sur 100', salaLatitud: null, salaLongitud: null } },
     });
 
+    it('el recordatorio solo sale para visitas confirmadas de mañana (hora de Chile)', async () => {
+      const mañana = conVisita(enHoras(24), 'CONFIRMADA');
+      const pasadoMañana = conVisita(enHoras(48), 'CONFIRMADA');
+      solicitudRepo.find.mockResolvedValue([mañana, pasadoMañana]);
+
+      expect(await service.enviarRecordatorios()).toBe(1);
+
+      expect(correo.enviar).toHaveBeenCalledTimes(1);
+      expect(correo.enviar).toHaveBeenCalledWith('j@p.cl', 'Recordatorio de visita: Los Robles', expect.stringContaining('Te recordamos que mañana'));
+      expect(solicitudRepo.find.mock.calls[0][0].where.visitaEstado).toBe('CONFIRMADA');
+    });
+
+    it('sin visitas para mañana no envía nada', async () => {
+      solicitudRepo.find.mockResolvedValue([]);
+      expect(await service.enviarRecordatorios()).toBe(0);
+      expect(correo.enviar).not.toHaveBeenCalled();
+    });
+
     it('avisa por correo al confirmar o reagendar, pero no al marcar la asistencia', async () => {
       solicitudRepo.findOne.mockResolvedValue(conVisita(enHoras(24)));
       await service.actualizarVisita('s1', { estado: 'CONFIRMADA' as never }, 'u1');

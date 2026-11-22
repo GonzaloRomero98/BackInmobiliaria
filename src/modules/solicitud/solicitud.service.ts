@@ -3,7 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { Solicitud } from "./entities/solicitud.entity";
-import { FindOptionsWhere, In, IsNull, LessThan, Not, Raw, Repository } from "typeorm";
+import { Between, FindOptionsWhere, In, IsNull, LessThan, Not, Raw, Repository } from "typeorm";
 import { ModeloCasa } from "../modeloCasa/entities/modeloCasa.entity";
 import { CrearSolicitudDto } from "./dto/crearSolicitud.dto";
 import { ListarSolicitudesDto } from "./dto/listarSolicitudes.dto";
@@ -107,7 +107,7 @@ export class SolicitudService{
     }
 
     // Se envía sin esperar la respuesta de Gmail para no demorar la petición.
-    private avisarVisita(solicitud:Solicitud, confirmada:boolean):void{
+    private avisarVisita(solicitud:Solicitud, confirmada:boolean, recordatorio = false):void{
         const proyecto = solicitud.modeloCasa.proyecto;
         const fecha = fechaParaCliente(solicitud.visitaPreferida!);
         const destino = proyecto.salaLatitud !== null && proyecto.salaLongitud !== null
@@ -116,7 +116,9 @@ export class SolicitudService{
         const lineas = [
             nombre ? `Hola ${nombre}:` : 'Hola:',
             '',
-            confirmada
+            recordatorio
+                ? `Te recordamos que mañana tienes tu visita a la sala de ventas de ${proyecto.nombre} (modelo ${solicitud.modeloCasa.nombreModelo}): ${fecha}.`
+                : confirmada
                 ? `Tu visita a la sala de ventas de ${proyecto.nombre} (modelo ${solicitud.modeloCasa.nombreModelo}) está confirmada para el ${fecha}.`
                 : `Recibimos tu solicitud de visita a la sala de ventas de ${proyecto.nombre} (modelo ${solicitud.modeloCasa.nombreModelo}) para el ${fecha}. Te contactaremos dentro de 48 horas para confirmarla.`,
             '',
@@ -130,7 +132,9 @@ export class SolicitudService{
         ];
         const texto = lineas.filter((linea) => linea !== null).join('\n');
         // Sin confirmar, el correo lo dispara el formulario público y cuenta para el tope diario.
-        void (confirmada
+        void (recordatorio
+            ? this.correoService.enviar(solicitud.correo, `Recordatorio de visita: ${proyecto.nombre}`, texto)
+            : confirmada
             ? this.correoService.enviar(solicitud.correo, `Visita confirmada: ${proyecto.nombre}`, texto)
             : this.correoService.enviarDesdeWeb(solicitud.correo, `Recibimos tu solicitud de visita: ${proyecto.nombre}`, texto));
     }
@@ -360,6 +364,23 @@ export class SolicitudService{
             }
             throw error;
         }
+    }
+
+    // Recordatorio del día anterior. A las 9:00 el día de Chile de mañana es el mismo aunque cambie la hora,
+    // así que se traen las visitas de las próximas 36 h y se filtran por fecha.
+    // Mejora pendiente: si la API está caída a las 9:00 ese día no se envía; para reintentar habría que guardar "recordatorio enviado".
+    @Cron('0 9 * * *', {timeZone:'America/Santiago'})
+    async enviarRecordatorios():Promise<number>{
+        const dia = (fecha:Date) => fecha.toLocaleDateString('en-CA', {timeZone:'America/Santiago'});
+        const ahora = Date.now();
+        const manana = dia(new Date(ahora + 24 * 60 * 60 * 1000));
+        const candidatas = await this.solicitudRepository.find({
+            where:{visitaEstado:EstadoVisita.CONFIRMADA, visitaPreferida:Between(new Date(ahora), new Date(ahora + 36 * 60 * 60 * 1000))},
+            relations:{modeloCasa:{proyecto:true}},
+        });
+        const visitas = candidatas.filter((s) => dia(s.visitaPreferida!) === manana);
+        visitas.forEach((s) => this.avisarVisita(s, true, true));
+        return visitas.length;
     }
 
     // Retención: los datos personales de las solicitudes se borran al cumplir el plazo.
