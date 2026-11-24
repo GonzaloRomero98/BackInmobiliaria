@@ -12,6 +12,8 @@ import { FiltrosModeloCasaDto, OrdenModelo } from "./dto/filtrosModeloCasa.dto";
 import { calcularEstado, EstadoModelo, TipoVivienda } from "./modelo-casa.enum";
 import { Solicitud } from "../solicitud/entities/solicitud.entity";
 import { S3Service } from "../s3/s3.service";
+import { NormativaProyecto } from "../proyecto/entities/normativaProyecto.entity";
+import { ExcesoNormativa, excesoDeNormativa } from "./normativa";
 
 const ORDEN: Record<OrdenModelo, FindOptionsOrder<ModeloCasa>> = {
     precio_asc: {precio:'ASC'},
@@ -38,6 +40,8 @@ export class ModeloCasaService{
         private readonly caracteristicaRepository: Repository<Caracteristica>,
         @InjectRepository(GaleriaModeloCasa)
         private readonly galeriaRepository: Repository<GaleriaModeloCasa>,
+        @InjectRepository(NormativaProyecto)
+        private readonly normativaRepository: Repository<NormativaProyecto>,
         private readonly s3Service: S3Service
     ){}
 
@@ -72,6 +76,7 @@ export class ModeloCasaService{
             modeloCasa.estado = calcularEstado(modeloCasa.unidades, 0, 0);
             modeloCasa.activo = crearModeloCasaDto.activo ?? true;
         this.exigirTerrenoEnCasas(modeloCasa);
+        await this.exigirConfirmacionNormativa(modeloCasa, crearModeloCasaDto.confirmarExceso);
 
         if(await this.buscarPorNombre(modeloCasa.nombreModelo)){
             throw new ConflictException("Ya se ha ingresado esta propiedad")
@@ -83,7 +88,7 @@ export class ModeloCasaService{
 
     async actualizarModeloCasa(id:string, actualizarModeloCasaDto:ActualizarModeloCasaDto):Promise<ModeloCasa>{
         const modelo = await this.obtenerModeloAdmin(id);
-        const {id_proyecto, estacionamiento, caracteristicasID, ...cambios} = actualizarModeloCasaDto;
+        const {id_proyecto, estacionamiento, caracteristicasID, confirmarExceso, ...cambios} = actualizarModeloCasaDto;
         this.exigirArchivos(cambios, modelo);
 
         if(id_proyecto !== undefined){
@@ -107,6 +112,7 @@ export class ModeloCasaService{
         Object.assign(modelo, cambios);
         if(cambios.bono !== undefined) modelo.bono = cambios.bono?.trim() || null;
         this.exigirTerrenoEnCasas(modelo);
+        await this.exigirConfirmacionNormativa(modelo, confirmarExceso);
 
         return this.modeloCasaRepository.manager.transaction(async (manager) => {
             const actual = await manager.findOne(ModeloCasa, {where:{id}, lock:{mode:'pessimistic_write'}, loadEagerRelations:false});
@@ -130,6 +136,26 @@ export class ModeloCasaService{
         this.s3Service.exigirArchivo(datos.imgPrincipal, 'modelosImagenes', guardado?.imgPrincipal);
         this.s3Service.exigirArchivo(datos.planoUrl, 'modelosImagenes', guardado?.planoUrl);
         this.s3Service.exigirArchivo(datos.modelo3dUrl, 'modelos3D', guardado?.modelo3dUrl);
+    }
+
+    // Se avisa sin bloquear: sin confirmarExceso responde 409 con el exceso para que el admin decida.
+    // Se evalúa con el proyecto final del modelo, porque la edición puede cambiarlo.
+    async excesoDeNormativa(modelo:ModeloCasa):Promise<ExcesoNormativa | null>{
+        const normativa = await this.normativaRepository.findOne({where:{proyecto:{id:modelo.proyecto.id}}, loadEagerRelations:false});
+        return excesoDeNormativa(modelo, normativa?.coefConstructibilidad);
+    }
+
+    private async exigirConfirmacionNormativa(modelo:ModeloCasa, confirmado?:boolean){
+        if(confirmado) return;
+        const exceso = await this.excesoDeNormativa(modelo);
+        if(exceso){
+            throw new ConflictException({
+                statusCode:409,
+                error:'Conflict',
+                message:`La superficie construida excede en ${exceso.exceso} m² el máximo de la normativa (${exceso.maximoConstruido} m²). Si es correcto, confirma para guardar.`,
+                ...exceso,
+            });
+        }
     }
 
     private exigirTerrenoEnCasas(modelo:ModeloCasa){

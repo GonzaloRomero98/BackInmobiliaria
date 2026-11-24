@@ -13,6 +13,7 @@ import { ActualizarModeloCasaDto } from "./dto/actualizarModeloCasa.dto";
 import { DuplicarModeloCasaDto } from "./dto/duplicarModeloCasa.dto";
 import { OrdenarFotosDto } from "./dto/ordenarFotos.dto";
 import { NombreDisponibleDto } from "./dto/nombreDisponible.dto";
+import { ModeloCasa } from "./entities/modeloCasa.entity";
 
 @ApiTags('modelos de casa')
 @ApiBearerAuth()
@@ -20,11 +21,20 @@ import { NombreDisponibleDto } from "./dto/nombreDisponible.dto";
 export class ModeloCasaController{
     constructor(private readonly modeloCasaService:ModeloCasaService){}
 
+    // Si el admin confirmó guardar excediendo la normativa, queda en el detalle de la auditoría.
+    private async auditarExceso(modelo:ModeloCasa, confirmado:boolean | undefined, res:Response){
+        if(!confirmado) return;
+        const exceso = await this.modeloCasaService.excesoDeNormativa(modelo);
+        if(exceso) res.locals.auditoriaDetalle = {excesoNormativa:exceso};
+    }
+
     @Post()
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
-    crearModeloCasa(@Body() crearmodeloCasaDto: CrearModeloCasaDto){
-        return this.modeloCasaService.crearModeloCasa(crearmodeloCasaDto);
+    async crearModeloCasa(@Body() crearmodeloCasaDto: CrearModeloCasaDto, @Res({passthrough:true}) res:Response){
+        const modelo = await this.modeloCasaService.crearModeloCasa(crearmodeloCasaDto);
+        await this.auditarExceso(modelo, crearmodeloCasaDto.confirmarExceso, res);
+        return modelo;
     }
 
     @Get()
@@ -62,8 +72,10 @@ export class ModeloCasaController{
     @Patch(':id')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(RolUsuario.ADMIN)
-    actualizarModeloCasa(@Param('id', ParseUUIDPipe) id:string, @Body() actualizarModeloCasaDto:ActualizarModeloCasaDto){
-        return this.modeloCasaService.actualizarModeloCasa(id, actualizarModeloCasaDto);
+    async actualizarModeloCasa(@Param('id', ParseUUIDPipe) id:string, @Body() actualizarModeloCasaDto:ActualizarModeloCasaDto, @Res({passthrough:true}) res:Response){
+        const modelo = await this.modeloCasaService.actualizarModeloCasa(id, actualizarModeloCasaDto);
+        await this.auditarExceso(modelo, actualizarModeloCasaDto.confirmarExceso, res);
+        return modelo;
     }
 
     @Delete(':id/definitivo')

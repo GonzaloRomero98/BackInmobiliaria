@@ -93,4 +93,9 @@ export class CrearModeloCasaDto{
     @IsOptional()
     @IsBoolean()
     activo?:boolean;
+
+    // El admin confirma guardar aunque la casa exceda el máximo construido de la normativa.
+    @IsOptional()
+    @IsBoolean()
+    confirmarExceso?:boolean;
 }

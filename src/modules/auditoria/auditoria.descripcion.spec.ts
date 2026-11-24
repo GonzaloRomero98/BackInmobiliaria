@@ -38,6 +38,12 @@ describe('describirAccion', () => {
     expect(describirAccion(registro('DELETE', `/api/modeloCasa/${FOTO}/definitivo`), nombres)).toBe('Eliminó definitivamente un modelo');
   });
 
+  it('un guardado que excedió la normativa lo dice con los m²', () => {
+    const detalle = { excesoNormativa: { exceso: 12.5, maximoConstruido: 150 } };
+    expect(describirAccion(registro('PATCH', `/api/modeloCasa/${FOTO}`, { detalle }), nombres))
+      .toBe('Editó un modelo: se guardó excediendo la normativa en 12,5 m² (máx. 150 m²)');
+  });
+
   it('si el recurso ya no se encuentra, usa un artículo indefinido', () => {
     expect(describirAccion(registro('PATCH', `/api/proyectos/${FOTO}`), nombres)).toBe('Editó un proyecto');
     expect(describirAccion(registro('PUT', `/api/proyectos/${FOTO}/normativa`), nombres)).toBe('Guardó la normativa de un proyecto');

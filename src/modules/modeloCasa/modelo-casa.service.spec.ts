@@ -9,6 +9,7 @@ import { CrearModeloCasaDto } from './dto/CrearModeloCasa.dto';
 import { EstadoModelo, Moneda, TipoOperacion, TipoVivienda } from './modelo-casa.enum';
 import { ConfigService } from '@nestjs/config';
 import { S3Service } from '../s3/s3.service';
+import { NormativaProyecto } from '../proyecto/entities/normativaProyecto.entity';
 
 // S3Service real con un bucket de prueba: las URLs nuevas tienen que ser de ese bucket y de su carpeta.
 const s3 = new S3Service(new ConfigService({ AWS_S3_BUCKET: 'bucket-test', AWS_REGION: 'us-east-1' }));
@@ -33,6 +34,7 @@ describe('ModeloCasaService', () => {
   let proyectoRepo: ReturnType<typeof mockRepo>;
   let caracRepo: ReturnType<typeof mockRepo>;
   let galeriaRepo: ReturnType<typeof mockRepo>;
+  let normativaRepo: ReturnType<typeof mockRepo>;
   let service: ModeloCasaService;
 
   const dto = (): CrearModeloCasaDto => ({
@@ -64,11 +66,13 @@ describe('ModeloCasaService', () => {
     proyectoRepo = mockRepo();
     caracRepo = mockRepo();
     galeriaRepo = mockRepo();
+    normativaRepo = mockRepo();
     service = new ModeloCasaService(
       modeloRepo as unknown as Repository<ModeloCasa>,
       proyectoRepo as unknown as Repository<Proyecto>,
       caracRepo as unknown as Repository<Caracteristica>,
       galeriaRepo as unknown as Repository<GaleriaModeloCasa>,
+      normativaRepo as unknown as Repository<NormativaProyecto>,
       s3,
     );
   });
@@ -86,7 +90,7 @@ describe('ModeloCasaService', () => {
 
     it('editar reenviando las URLs guardadas con formato antiguo se acepta; una URL nueva externa no', async () => {
       const antigua = `${BUCKET}models/0b7c2c64-7a8e-4f0f-9a43-2f1d6f1e9b10.jpg`;
-      const existente = { id: 'm1', nombreModelo: 'Casa A', tipoVivienda: 'CASA', superficieTerreno: 200, caracteristicas: [],
+      const existente = { id: 'm1', proyecto: { id: 'p1' }, nombreModelo: 'Casa A', tipoVivienda: 'CASA', superficieTerreno: 200, caracteristicas: [],
         imgPrincipal: antigua, planoUrl: antigua, modelo3dUrl: null };
       modeloRepo.findOne.mockResolvedValue(existente);
       await expect(service.actualizarModeloCasa('m1', { imgPrincipal: antigua, planoUrl: antigua, modelo3dUrl: null, precio: 4000 }))
@@ -158,6 +162,61 @@ describe('ModeloCasaService', () => {
 
     const borrador = await service.crearModeloCasa({ ...dto(), unidades: 25, activo: false });
     expect(borrador).toMatchObject({ unidades: 25, estado: 'DISPONIBLE', activo: false });
+  });
+
+  describe('normativa: máximo construido (confirmarExceso)', () => {
+    // Terreno 200 m² con coeficiente 0,45 -> máximo 90 m²; el dto base construye 90,5 m² (excede 0,5).
+    const conCoeficiente = (coefConstructibilidad: number | null) => {
+      proyectoRepo.findOne.mockResolvedValue({ id: 'p1' });
+      normativaRepo.findOne.mockResolvedValue(coefConstructibilidad === null ? null : { coefConstructibilidad });
+    };
+
+    it('crear: 409 con exceso y máximo redondeados, sin guardar', async () => {
+      conCoeficiente(0.45);
+      const error = await service.crearModeloCasa(dto()).catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({ exceso: 0.5, maximoConstruido: 90 });
+      expect(modeloRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('crear con confirmarExceso guarda, y el campo no llega a la entidad', async () => {
+      conCoeficiente(0.45);
+      await service.crearModeloCasa({ ...dto(), confirmarExceso: true });
+      expect(modeloRepo.save.mock.calls[0][0]).not.toHaveProperty('confirmarExceso');
+    });
+
+    it('no bloquea si no excede, si no hay normativa o si el coeficiente falta o es 0', async () => {
+      for (const coef of [0.5, null, 0]) {
+        modeloRepo.save.mockClear();
+        conCoeficiente(coef);
+        await service.crearModeloCasa(dto());
+        expect(modeloRepo.save).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('no bloquea un departamento ni una casa sin terreno válido', async () => {
+      conCoeficiente(0.01);
+      await service.crearModeloCasa({ ...dto(), tipoVivienda: TipoVivienda.DEPARTAMENTO, superficieTerreno: null });
+      expect(modeloRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('evita errores de punto flotante: 0,1 × 3 = 0,3 no excede 0,3 m²', async () => {
+      conCoeficiente(0.1);
+      await service.crearModeloCasa({ ...dto(), superficieTerreno: 3, superficieConstruida: 0.3 });
+      expect(modeloRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('editar: 409 sin confirmar; al cambiar de proyecto se evalúa con la normativa del proyecto nuevo', async () => {
+      modeloRepo.findOne.mockResolvedValue({ id: 'm1', proyecto: { id: 'p0' }, tipoVivienda: TipoVivienda.CASA, superficieConstruida: 90.5, superficieTerreno: 200, unidades: 1, unidadesReservadas: 0, unidadesVendidas: 0, imgPrincipal: IMG });
+      proyectoRepo.findOne.mockResolvedValue({ id: 'p2' });
+      normativaRepo.findOne.mockResolvedValue({ coefConstructibilidad: 0.45 });
+
+      await expect(service.actualizarModeloCasa('m1', { id_proyecto: '22222222-2222-4222-8222-222222222222' })).rejects.toBeInstanceOf(ConflictException);
+      expect(normativaRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({ where: { proyecto: { id: 'p2' } } }));
+
+      await service.actualizarModeloCasa('m1', { id_proyecto: '22222222-2222-4222-8222-222222222222', confirmarExceso: true });
+      expect(modeloRepo.save).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('tipo de vivienda y datos comerciales', () => {

@@ -93,5 +93,9 @@ export function describirAccion(r: RegistroDescribible, nombres: ReadonlyMap<str
     if (!texto) return null;
     // Si el recurso se eliminó, su nombre quedó guardado en el detalle del registro.
     const nombre = (ruta.id ? nombres.get(ruta.id) : undefined) ?? (typeof r.detalle?.nombre === 'string' ? r.detalle.nombre : undefined);
-    return texto((articulo) => nombre ? `${articulo} «${nombre}»` : articulo.replace(/^(el|del|al) /, (_, a: string) => `${INDEFINIDO[a]} `));
+    const base = texto((articulo) => nombre ? `${articulo} «${nombre}»` : articulo.replace(/^(el|del|al) /, (_, a: string) => `${INDEFINIDO[a]} `));
+    const exceso = r.detalle?.excesoNormativa as {exceso?: number; maximoConstruido?: number} | undefined;
+    if (exceso?.exceso === undefined) return base;
+    const m2 = (n: number | undefined) => `${String(n ?? '?').replace('.', ',')} m²`;
+    return `${base}: se guardó excediendo la normativa en ${m2(exceso.exceso)} (máx. ${m2(exceso.maximoConstruido)})`;
 }

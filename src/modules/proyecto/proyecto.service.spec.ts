@@ -29,6 +29,7 @@ describe('ProyectoService', () => {
       findOne: jest.fn(), find: jest.fn(async () => []), create: jest.fn((x) => x), save: jest.fn(async (x) => ({ id: 'p1', ...x })),
       update: jest.fn(),
     };
+    Object.assign(proyectoRepo, { manager: { find: jest.fn(async () => []) } });
     entornoService = { calcular: jest.fn().mockResolvedValue({ radio: 1000, lugares: [], resumen: {} }) };
     ciudadRepo = { findOne: jest.fn() };
     normativaRepo = { findOne: jest.fn(), create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
@@ -198,6 +199,21 @@ describe('ProyectoService', () => {
       await service.guardarNormativa('p1', { ...dto, zona: 'ZH-3' });
 
       expect(normativaRepo.save.mock.calls[0][0]).toMatchObject({ id: 'n1', zona: 'ZH-3', densidadMaxima: null, riesgos: [] });
+    });
+
+    it('devuelve los modelos CASA que exceden el nuevo máximo construido (sin bloquear)', async () => {
+      proyectoRepo.findOne.mockResolvedValue({ id: 'p1' });
+      normativaRepo.findOne.mockResolvedValue({ id: 'n1', ...dto, coefConstructibilidad: 0.5 });
+      const find = jest.fn().mockResolvedValue([
+        { id: 'm1', nombreModelo: 'Casa A', tipoVivienda: 'CASA', superficieConstruida: 110.5, superficieTerreno: 200 },
+        { id: 'm2', nombreModelo: 'Casa B', tipoVivienda: 'CASA', superficieConstruida: 100, superficieTerreno: 200 },
+        { id: 'm3', nombreModelo: 'Depto', tipoVivienda: 'DEPARTAMENTO', superficieConstruida: 500, superficieTerreno: null },
+      ]);
+      Object.assign(proyectoRepo, { manager: { find } });
+
+      const respuesta = await service.guardarNormativa('p1', { ...dto, coefConstructibilidad: 0.5 });
+
+      expect(respuesta.modelosQueExceden).toEqual([{ id: 'm1', nombreModelo: 'Casa A', exceso: 10.5 }]);
     });
 
     it('404 al guardar si el proyecto no existe', async () => {

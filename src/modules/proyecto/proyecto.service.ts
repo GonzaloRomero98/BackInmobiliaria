@@ -11,6 +11,7 @@ import { NormativaProyecto } from "./entities/normativaProyecto.entity";
 import { NormativaDto } from "./dto/normativa.dto";
 import { distanciaMetros, Entorno, EntornoService } from "./entorno.service";
 import { S3Service } from "../s3/s3.service";
+import { excesoDeNormativa } from "../modeloCasa/normativa";
 
 // A menos de 50 m casi siempre es un duplicado o un clic equivocado en el mapa.
 export const DISTANCIA_DUPLICADO_M = 50;
@@ -204,7 +205,8 @@ export class ProyectoService{
         return normativa;
     }
 
-    async guardarNormativa(id:string, normativaDto: NormativaDto): Promise<NormativaProyecto>{
+    // Además de guardar, avisa qué modelos ya existentes exceden el nuevo máximo construido. No bloquea.
+    async guardarNormativa(id:string, normativaDto: NormativaDto): Promise<NormativaProyecto & {modelosQueExceden:{id:string, nombreModelo:string, exceso:number}[]}>{
         const proyecto = await this.obtenerProyectoPorID(id);
         const existente = await this.normativaRepository.findOne({where:{proyecto:{id}}});
 
@@ -222,7 +224,17 @@ export class ProyectoService{
             proyecto,
         });
         await this.normativaRepository.save(normativa);
-        return this.obtenerNormativa(id);
+
+        const modelos = await this.proyectoRepository.manager.find(ModeloCasa, {
+            where:{proyecto:{id}},
+            select:{id:true, nombreModelo:true, tipoVivienda:true, superficieConstruida:true, superficieTerreno:true},
+            loadEagerRelations:false,
+        });
+        const modelosQueExceden = modelos.flatMap((m) => {
+            const resultado = excesoDeNormativa(m, normativa.coefConstructibilidad);
+            return resultado ? [{id:m.id, nombreModelo:m.nombreModelo, exceso:resultado.exceso}] : [];
+        });
+        return {...await this.obtenerNormativa(id), modelosQueExceden};
     }
 
     private async buscarCiudad(id_ciudad:number): Promise<Ciudad>{

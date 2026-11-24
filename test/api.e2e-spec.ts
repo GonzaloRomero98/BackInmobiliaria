@@ -71,7 +71,7 @@ function repo(entity: unknown): MockRepo {
       update: jest.fn(),
       createQueryBuilder: jest.fn(() => queryBuilder),
     });
-    Object.assign(repos.get(entity)!, { manager: { transaction: (cb: (m: unknown) => unknown) => cb(gestorSimulado) } });
+    Object.assign(repos.get(entity)!, { manager: { transaction: (cb: (m: unknown) => unknown) => cb(gestorSimulado), find: gestorSimulado.find } });
   }
   return repos.get(entity)!;
 }
@@ -557,6 +557,14 @@ describe('API (e2e, BD simulada)', () => {
       expect(repo(NormativaProyecto).save).toHaveBeenCalled();
     });
 
+    it('PUT normativa avisa los modelos que exceden el nuevo máximo', async () => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
+      repo(NormativaProyecto).findOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'n1', ...normativa });
+      repo(ModeloCasa).find.mockResolvedValue([{ id: 'm1', nombreModelo: 'Casa A', tipoVivienda: 'CASA', superficieConstruida: 110, superficieTerreno: 200 }]);
+      const res = await http().put(`/api/proyectos/${UUID}/normativa`).set(auth(adminToken)).send({ ...normativa, coefConstructibilidad: 0.5 }).expect(200);
+      expect(res.body.modelosQueExceden).toEqual([{ id: 'm1', nombreModelo: 'Casa A', exceso: 10 }]);
+    });
+
     it.each([
       ['riesgo desconocido', { riesgos: ['ALIENS'] }],
       ['ocupación de suelo > 1', { coefOcupacionSuelo: 1.5 }],
@@ -624,6 +632,31 @@ describe('API (e2e, BD simulada)', () => {
     ])('crear con %s -> 400', async (_caso, cambio) => {
       repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
       await http().post('/api/modeloCasa').set(auth(adminToken)).send({ ...body, ...cambio }).expect(400);
+    });
+
+    // Terreno 200 m² con coeficiente 0,45 -> máximo 90 m²; el modelo base construye 90,5 m².
+    it('casa que excede la normativa -> 409 con el exceso y sin guardar; con confirmarExceso -> 201 y queda en la auditoría', async () => {
+      repo(Proyecto).findOne.mockResolvedValue({ id: UUID });
+      repo(NormativaProyecto).findOne.mockResolvedValue({ coefConstructibilidad: 0.45 });
+
+      const res = await http().post('/api/modeloCasa').set(auth(adminToken)).send(body).expect(409);
+      expect(res.body).toMatchObject({ exceso: 0.5, maximoConstruido: 90 });
+      expect(repo(ModeloCasa).save).not.toHaveBeenCalled();
+
+      await http().post('/api/modeloCasa').set(auth(adminToken)).send({ ...body, confirmarExceso: true }).expect(201);
+      expect(repo(ModeloCasa).save.mock.calls[0][0]).not.toHaveProperty('confirmarExceso');
+      await esperarAuditoria();
+      expect(repo(Auditoria).save).toHaveBeenCalledWith(expect.objectContaining({
+        accion: 'POST /api/modeloCasa', estado: 201, detalle: { excesoNormativa: { exceso: 0.5, maximoConstruido: 90 } },
+      }));
+    });
+
+    it('editar una casa que excede -> 409; con confirmarExceso -> 200', async () => {
+      repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID, proyecto: { id: UUID }, tipoVivienda: 'CASA', superficieConstruida: 90.5, superficieTerreno: 200, unidades: 1, unidadesReservadas: 0, unidadesVendidas: 0, imgPrincipal: IMG });
+      repo(NormativaProyecto).findOne.mockResolvedValue({ coefConstructibilidad: 0.45 });
+
+      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ dormitorios: 4 }).expect(409);
+      await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ dormitorios: 4, confirmarExceso: true }).expect(200);
     });
 
     it('nombre duplicado -> 409', async () => {
@@ -696,7 +729,7 @@ describe('API (e2e, BD simulada)', () => {
     });
 
     it('PATCH con ADMIN actualiza solo lo enviado; body inválido -> 400; SECRETARIO -> 403', async () => {
-      repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID, nombreModelo: 'Casa A', precio: 3500, caracteristicas: [] });
+      repo(ModeloCasa).findOne.mockResolvedValue({ id: UUID, proyecto: { id: UUID }, nombreModelo: 'Casa A', precio: 3500, caracteristicas: [] });
       const res = await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ precio: 3900, modelo3dUrl: null }).expect(200);
       expect(res.body).toMatchObject({ nombreModelo: 'Casa A', precio: 3900, modelo3dUrl: null });
 
@@ -709,7 +742,7 @@ describe('API (e2e, BD simulada)', () => {
 
     it('PATCH unidades y publicar: el estado lo calcula el servidor (el enviado se ignora)', async () => {
       repo(ModeloCasa).findOne.mockResolvedValue({
-        id: UUID, nombreModelo: 'Casa A', activo: false, caracteristicas: [],
+        id: UUID, proyecto: { id: UUID }, nombreModelo: 'Casa A', activo: false, caracteristicas: [],
         unidades: 2, unidadesReservadas: 2, unidadesVendidas: 0, estado: 'RESERVADO',
       });
       const res = await http().patch(`/api/modeloCasa/${UUID}`).set(auth(adminToken)).send({ estado: 'VENDIDO', unidades: 4, activo: true }).expect(200);
