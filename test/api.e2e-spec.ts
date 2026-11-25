@@ -20,6 +20,7 @@ import { Solicitud } from '../src/modules/solicitud/entities/solicitud.entity';
 import { Auditoria } from '../src/modules/auditoria/entities/auditoria.entity';
 import { NormativaProyecto } from '../src/modules/proyecto/entities/normativaProyecto.entity';
 import { EntornoService } from '../src/modules/proyecto/entorno.service';
+import { DireccionService } from '../src/modules/ubicacion/direccion.service';
 import { EventoModelo } from '../src/modules/metricas/entities/eventoModelo.entity';
 import { SesionCerrada } from '../src/modules/auth/entities/sesionCerrada.entity';
 
@@ -102,6 +103,7 @@ const usuarios: Record<string, Partial<Usuario>> = {
   'inactivo-id': { id: 'inactivo-id', correo: 'baja@x.cl', activo: false, rol: { id: 1, nombre: 'ADMIN' } },
 };
 
+const direccionMock = { buscar: jest.fn() };
 const entornoMock = { calcular: jest.fn() };
 const ENTORNO = { radio: 1000, lugares: [], resumen: { transporte: 2, educacion: 5, salud: 1, comercio: 3, areasVerdes: 4 } };
 
@@ -126,6 +128,8 @@ describe('API (e2e, BD simulada)', () => {
       .useValue(rateLimitPorTest)
       .overrideProvider(EntornoService)
       .useValue(entornoMock)
+      .overrideProvider(DireccionService)
+      .useValue(direccionMock)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -159,6 +163,7 @@ describe('API (e2e, BD simulada)', () => {
     queryBuilder.execute.mockReset().mockResolvedValue({ affected: 0 });
     fakeDataSource.query.mockReset().mockResolvedValue([{ '?column?': 1 }]);
     entornoMock.calcular.mockReset().mockResolvedValue(ENTORNO);
+    direccionMock.buscar.mockReset();
     for (const r of repos.values()) r.update?.mockReset();
     rateLimit.onApplicationShutdown();
     rateLimit = new ThrottlerStorageService();
@@ -365,6 +370,34 @@ describe('API (e2e, BD simulada)', () => {
 
     it('GET /api/ubicacion/ciudades?id_region=abc -> 400', () =>
       http().get('/api/ubicacion/ciudades?id_region=abc').expect(400));
+
+    describe('GET /api/ubicacion/direccion', () => {
+      const ruta = '/api/ubicacion/direccion?latitud=-33.4372&longitud=-70.6506';
+
+      it('sin sesión -> 401 y con SECRETARIO -> 403', async () => {
+        await http().get(ruta).expect(401);
+        await http().get(ruta).set(auth(secretarioToken)).expect(403);
+        expect(direccionMock.buscar).not.toHaveBeenCalled();
+      });
+
+      it('con coordenadas fuera de rango o sin ellas -> 400', async () => {
+        await http().get('/api/ubicacion/direccion?latitud=95&longitud=-70').set(auth(adminToken)).expect(400);
+        await http().get('/api/ubicacion/direccion?latitud=abc&longitud=-70').set(auth(adminToken)).expect(400);
+        await http().get('/api/ubicacion/direccion').set(auth(adminToken)).expect(400);
+        expect(direccionMock.buscar).not.toHaveBeenCalled();
+      });
+
+      it('ADMIN recibe la dirección, o null si no hay calle', async () => {
+        direccionMock.buscar.mockResolvedValueOnce('Plaza de Armas 951');
+        const res = await http().get(ruta).set(auth(adminToken)).expect(200);
+        expect(res.body).toEqual({ direccion: 'Plaza de Armas 951' });
+        expect(direccionMock.buscar).toHaveBeenCalledWith(-33.4372, -70.6506);
+
+        direccionMock.buscar.mockResolvedValueOnce(null);
+        const sinCalle = await http().get(ruta).set(auth(adminToken)).expect(200);
+        expect(sinCalle.body).toEqual({ direccion: null });
+      });
+    });
 
     it('GET /api/proyectos/:id con id no UUID -> 400', () =>
       http().get('/api/proyectos/123').expect(400));
